@@ -19,6 +19,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -162,9 +163,49 @@ def main() -> int:
             return 1
 
     print()
-    apply(spreadsheet, plan)
+    try:
+        apply(spreadsheet, plan)
+    except gspread.exceptions.APIError as exc:
+        # Opening the sheet only proves read access. Sharing it with the
+        # service account as Viewer gets you all the way to here and then
+        # fails on the first write, so say so rather than showing a traceback.
+        if _status(exc) in (401, 403):
+            print(f"\nPermission denied writing to {spreadsheet.title!r}.", file=sys.stderr)
+            print(
+                "The service account can read this sheet but not write to it, "
+                "so it was shared as Viewer rather than Editor.\n\n"
+                f"Open the sheet → Share → {_service_account_email(settings)} "
+                "→ set to Editor → Send, then run this again. Applying the plan "
+                "twice is safe: it only ever adds what is still missing.",
+                file=sys.stderr,
+            )
+            return 2
+        print(f"\nThe Sheets API rejected the change:\n  {exc}", file=sys.stderr)
+        return 2
+
     print("\nDone. Re-run with --dry-run to confirm.")
     return 0
+
+
+def _status(exc: gspread.exceptions.APIError) -> int | None:
+    """HTTP status behind an APIError, or None if it cannot be read."""
+    return getattr(getattr(exc, "response", None), "status_code", None)
+
+
+def _service_account_email(settings) -> str:
+    """The ``client_email`` from the credentials file, for the Share dialog.
+
+    This is the one piece of information the fix needs and the one nobody has
+    to hand. A key file that cannot be read falls back to a description rather
+    than failing the error path itself.
+    """
+    try:
+        with open(settings.google_creds_path, encoding="utf-8") as handle:
+            return json.load(handle).get("client_email", "") or "your service account"
+    except Exception:  # noqa: BLE001 - this runs inside error reporting
+        return (
+            f"the client_email in {settings.google_creds_path}"
+        )
 
 
 if __name__ == "__main__":
