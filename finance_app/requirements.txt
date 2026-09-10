@@ -1,0 +1,15 @@
+streamlit
+gspread
+google-auth
+pandas
+google-genai
+python-dotenv
+requests
+beautifulsoup4
+extruct
+
+# Optional: voice input on the Buy Advisor. The page works without these —
+# it falls back to typing only. faster-whisper downloads a ~141 MB model
+# ("base") to the Hugging Face cache on first use.
+audio-recorder-streamlit
+faster-whisper

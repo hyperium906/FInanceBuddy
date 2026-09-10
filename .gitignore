@@ -1,0 +1,34 @@
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Service-account and other credential keys. Deny-by-default: a downloaded
+# key lands as an arbitrary *.json name, so every JSON is ignored and the
+# handful the app actually ships are named back in below.
+*.json
+!package.json
+!tsconfig.json
+!.vscode/*.json
+# Merchant -> category rules. Not a secret, and the app's cheap first tier of
+# categorization is empty without it.
+!finance_app/category_rules.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+
+# Tooling
+.idea/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.DS_Store
+
+# Local sheet backups — contain real financial data
+backups/
