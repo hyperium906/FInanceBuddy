@@ -41,12 +41,13 @@ class Plan:
     def __init__(self) -> None:
         self.create: list[tuple[str, list[str]]] = []
         self.add_columns: list[tuple[str, list[str]]] = []
+        self.conflicts: list[tuple[str, list[str], list[str]]] = []
         self.ok: list[str] = []
         self.notes: list[str] = []
 
     @property
     def empty(self) -> bool:
-        """True when the workbook already matches the schema."""
+        """True when there is nothing this script can safely do."""
         return not self.create and not self.add_columns
 
     def render(self) -> None:
@@ -56,6 +57,10 @@ class Plan:
         for tab, missing in self.add_columns:
             names = ", ".join(repr(name) for name in missing)
             print(f"  {tab:16} exists, ADD COLUMN {names}")
+        for tab, actual, _ in self.conflicts:
+            print(f"  {tab:16} SKIP — row 1 is a different convention: "
+                  + ", ".join(repr(name) for name in actual[:4])
+                  + ("…" if len(actual) > 4 else ""))
         for tab in self.ok:
             print(f"  {tab:16} exists, headers OK")
         for note in self.notes:
@@ -63,8 +68,28 @@ class Plan:
         total = len(SCHEMA)
         print(
             f"\n  {total} tab(s) checked / {len(self.create)} to create / "
-            f"{len(self.add_columns)} to extend / 0 rows touched"
+            f"{len(self.add_columns)} to extend / {len(self.conflicts)} skipped / "
+            "0 rows touched"
         )
+
+    def render_conflicts(self) -> None:
+        """Explain the skipped tabs and what the choice is."""
+        if not self.conflicts:
+            return
+        print(
+            f"\n{len(self.conflicts)} tab(s) were skipped. Each already has a "
+            "header row that shares no column name with the schema — almost "
+            "always the same fields under a different naming convention, with "
+            "real data underneath.\n"
+            "\nAppending the schema's names as new columns would leave the tab "
+            "with two header sets and the app reading the empty half, so this "
+            "script will not do it. Rename row 1 in place to the names below "
+            "(the data underneath keeps its columns), then run this again."
+        )
+        for tab, actual, expected in self.conflicts:
+            print(f"\n  {tab}")
+            print(f"    row 1 now: {', '.join(actual)}")
+            print(f"    schema:    {', '.join(expected)}")
 
 
 def build_plan(spreadsheet) -> Plan:
@@ -80,8 +105,16 @@ def build_plan(spreadsheet) -> Plan:
 
         row = existing[tab].row_values(1) if existing[tab].row_count else []
         actual = [str(cell).strip() for cell in row]
+        present = [name for name in actual if name]
         missing = [name for name in expected if name not in actual]
-        if missing:
+
+        # A populated row 1 that matches nothing is a different naming
+        # convention, not a set of missing columns. Appending here would give
+        # the tab two header sets and leave the app reading the empty one, so
+        # it is reported for a human to rename instead.
+        if present and len(missing) == len(expected):
+            plan.conflicts.append((tab, present, expected))
+        elif missing:
             plan.add_columns.append((tab, missing))
         else:
             plan.ok.append(tab)
@@ -148,8 +181,12 @@ def main() -> int:
         return 2
 
     plan.render()
+    plan.render_conflicts()
 
     if plan.empty:
+        if plan.conflicts:
+            print("\nNothing was changed: every remaining tab needs the rename above.")
+            return 3
         print("\nNothing to do — the workbook already matches the schema.")
         return 0
     if args.dry_run:
@@ -184,7 +221,7 @@ def main() -> int:
         return 2
 
     print("\nDone. Re-run with --dry-run to confirm.")
-    return 0
+    return 3 if plan.conflicts else 0
 
 
 def _status(exc: gspread.exceptions.APIError) -> int | None:
