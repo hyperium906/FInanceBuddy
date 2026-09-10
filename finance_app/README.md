@@ -105,6 +105,31 @@ Paste the headers below into row 1 of each tab. Names are case-sensitive.
 | `_Goals` | `Goal ID` · `Name` · `Target Amount` · `Saved Amount` · `Target Date` · `Bucket` · `Account ID` · `Notes` |
 | `_Config` | `Key` · `Value` |
 
+### If your sheet already uses different headers
+
+You do not have to rename anything. Each column in `models.py` carries a set of
+**aliases**, and the readers resolve a tab by its live header row rather than by
+position — so a tab spelling it `account_id` works exactly as one spelling it
+`Account ID`. Writes resolve the same way and are placed by the live header, so
+a reordered or differently-named tab is never written one column across.
+
+Three layouts are not renames but different shapes, and the reader converts
+them on the way in:
+
+| Your sheet has | The app reads | How |
+| --- | --- | --- |
+| `due_day` (a day number) | `Next Due` (a date) | Next occurrence of that day, today counting as due; a 31st stays inside a short month |
+| `allocation_type` + `value` | `Percent` **and** `Amount` | `percent` rows fill Percent, everything else fills Amount; the other half is 0, never blank |
+| `active` on `_Allocations` | — | A switched-off allocation is not a standing rule, so those rows are dropped |
+
+`_Config` keys resolve through aliases too: `paycheck_net` is read as
+`paycheck_amount`. A key present under its canonical name always wins.
+
+A column the app can do without — an ID it generates on write, `Notes`,
+`Currency`, `_Allocations`' `Month` — is marked optional in the schema, so a
+sheet lacking it reads fine and the validator stays quiet. Columns the app does
+not recognise at all, such as a `merchant` column, are left strictly alone.
+
 Notes:
 
 - `_Allocations` does double duty. Rows with a **blank `Month`** are your
@@ -223,24 +248,6 @@ thresholds at the top of `logic/affordability.py`, all editable:
 If the API fails or rate-limits, the verdict and the full numbers table still
 render; only the prose is missing.
 
-### Voice input (optional)
-
-The advisor's query box has a 🎤 button: it records a clip in the browser and
-transcribes it **locally** with faster-whisper, so no audio leaves your machine.
-The transcript lands in the box as **editable text and is never auto-submitted**.
-
-```bash
-pip install audio-recorder-streamlit faster-whisper
-```
-
-First use downloads the `base` model to `~/.cache/huggingface/` — **about
-141 MB**, roughly 40 seconds including the download; later calls take a second
-or two. Set `WHISPER_MODEL` to `tiny` (~75 MB) or `small` (~460 MB) for a
-different trade-off.
-
-**Both packages are optional.** Without them the button becomes a greyed
-"🎤 off" marker whose tooltip says what to install, and typing works normally.
-
 ---
 
 ## Tests
@@ -249,7 +256,7 @@ different trade-off.
 pytest
 ```
 
-217 tests, all offline — no API key, no network, no quota, no Google account.
+218 tests, all offline — no API key, no network, no quota, no Google account.
 `tests/conftest.py` holds synthetic DataFrames; `tests/checks/` holds
 longer narrative regression scripts that `pytest` runs as subprocesses.
 
@@ -302,7 +309,6 @@ finance_app/
   config.py         env vars; fails fast naming what is missing
   llm.py            the ONLY module that calls an LLM provider
   scrape.py         best-effort product lookup from a URL
-  voice.py          optional voice input (record + local transcription)
   category_rules.json   user-editable merchant -> category rules
   data/
     models.py       frozen dataclasses; the single source of truth for the schema
@@ -342,4 +348,3 @@ sidebar clears every cache after you edit the sheet by hand.
   per-institution balances, and raw transactions never leave the machine.
 - Merchant names are scrubbed of card numbers, account numbers, and reference
   IDs before categorization (`scrub_merchant`).
-- Voice transcription runs locally via faster-whisper. No audio is uploaded.

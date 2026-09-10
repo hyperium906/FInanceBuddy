@@ -1,7 +1,7 @@
 """Runs the standalone regression checks under pytest.
 
 `tests/checks/*.py` are self-asserting scripts covering the Sheets layer,
-categorization, wishlist/scraping, and voice. They predate the pytest suite and
+categorization, and wishlist/scraping. They predate the pytest suite and
 are kept as scripts because they read as a narrative of what the layer
 guarantees. Each is executed here as a subprocess so `pytest` runs everything;
 on failure the script's own output is the failure message.

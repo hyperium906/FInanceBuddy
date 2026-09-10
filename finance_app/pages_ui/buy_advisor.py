@@ -22,11 +22,8 @@ from finance_app.logic import affordability as AF
 from finance_app.logic import budget as B
 from finance_app.logic import wishlist as W
 from finance_app.pages_ui.wishlist import _lookup
-from finance_app import voice
 
 _QUERY = "advisor_query"
-_PENDING = "advisor_pending_transcript"
-_VOICE_NOTE = "advisor_voice_note"
 _HISTORY = "advisor_history"
 _ASSESSED = "advisor_assessment"
 _ITEM = "buy_advisor_item"
@@ -107,28 +104,12 @@ def _input_panel(data: dict) -> tuple[str, float | None, str]:
         st.info(f"From your wishlist: **{handoff['name']}**")
         st.session_state[_QUERY] = handoff.get("url") or ""
 
-    # A transcript captured on the previous run is applied here, BEFORE the
-    # widget is instantiated. Streamlit forbids writing a widget's own key
-    # after it renders, so the recorder stages the text and reruns.
-    pending = st.session_state.pop(_PENDING, None)
-    if pending is not None:
-        st.session_state[_QUERY] = pending
-
     st.session_state.setdefault(_QUERY, "")
-
-    typing, speaking = st.columns([5, 1])
-    query = typing.text_input(
+    query = st.text_input(
         "Product link or price",
         key=_QUERY,
         placeholder="https://…  or  249.99",
     )
-    with speaking:
-        _voice_control()
-
-    note = st.session_state.pop(_VOICE_NOTE, None)
-    if note:
-        level, text = note
-        (st.caption if level == "info" else st.warning)(text)
 
     name = (handoff or {}).get("name", "")
     category = (handoff or {}).get("category", "")
@@ -161,42 +142,6 @@ def _input_panel(data: dict) -> tuple[str, float | None, str]:
         return name, None, category
     return name, price, category
 
-
-def _voice_control() -> None:
-    """Record a clip and drop the transcript into the text box.
-
-    The transcript lands in the box as ordinary editable text — it is never
-    submitted automatically, so a misheard word can be corrected first.
-    """
-    available = voice.availability()
-    if not available.usable:
-        # Not an error: voice is optional and typing is the primary path.
-        st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
-        st.caption("🎤 off", help=available.message)
-        return
-
-    st.markdown("<div style='height:22px'></div>", unsafe_allow_html=True)
-    audio = voice.record(key="advisor_voice")
-    if not audio:
-        return
-
-    with st.spinner("Transcribing…"):
-        result = voice.transcribe(audio)
-
-    if not result.ok:
-        st.session_state[_VOICE_NOTE] = ("warn", f"🎤 {result.reason}")
-        return
-
-    # Stage the text and rerun; _input_panel applies it before the widget is
-    # built. Writing _QUERY directly here would raise, because the text box has
-    # already been instantiated further up this same run.
-    st.session_state[_PENDING] = result.text
-    st.session_state[_VOICE_NOTE] = (
-        "info",
-        f"🎤 Heard: “{result.text}” — edit it if that is not quite right, "
-        "then it will be used as your query.",
-    )
-    st.rerun()
 
 
 def _verdict_banner(a: AF.Assessment) -> None:

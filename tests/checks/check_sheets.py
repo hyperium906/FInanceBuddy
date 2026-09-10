@@ -24,6 +24,9 @@ class FakeWS:
     def col_values(self, n):
         CALLS.append(("col_values", self.title, n))
         return [ (r[n-1] if n-1 < len(r) else "") for r in self.values ]
+    def row_values(self, n):
+        CALLS.append(("row_values", self.title, n))
+        return list(self.values[n-1]) if n-1 < len(self.values) else []
     def append_rows(self, rows, value_input_option=None):
         CALLS.append(("append_rows", self.title, len(rows))); self.values += [list(r) for r in rows]
     def update_cell(self, r, c, v):
@@ -163,14 +166,30 @@ tabs["_Debts"].values[0] = ["Debt ID","Name","Type","Balance","Interest","Minimu
 del tabs["_Allocations"]
 print("broken:", S.validate_schema(client))
 tabs["_Debts"].values[0] = ["Debt ID","Name","Type","Balance","APR","Minimum Payment","Due Day","Account ID"]
-# swap the first two headers, derived from the schema so this cannot go stale
+# A reordered tab is no longer a problem: reads resolve by header and appends
+# align to the live header, so order cannot shift a value one column across.
 _swapped = hdr("_Wishlist")[:]
 _swapped[0], _swapped[1] = _swapped[1], _swapped[0]
 tabs["_Wishlist"].values[0] = _swapped
 probs = S.validate_schema(client)
-print("out-of-order detected:", [p for p in probs if "_Wishlist" in p])
-assert any("out of order" in p for p in probs)
+print("reordered _Wishlist:", [p for p in probs if "_Wishlist" in p] or "accepted")
+assert not [p for p in probs if "_Wishlist" in p], probs
 tabs["_Wishlist"].values[0] = hdr("_Wishlist")
+
+print("\n=== appends land by header, not by schema position ===")
+# Transaction ID last and Amount before Description: nothing like schema order.
+tabs["_Transactions"] = FakeWS("_Transactions", [
+    ["Date","Amount","Description","Category","Account ID","Notes","Transaction ID"]
+])
+client.append_transactions(pd.DataFrame([
+    {"Date":"2026-03-05","Account ID":"a9","Description":"Tea","Category":"Food","Amount":"-3.25"},
+]))
+written = tabs["_Transactions"].values[-1]
+print("  row written:", written)
+assert written[0] == "2026-03-05" and written[1] == -3.25, written
+assert written[2] == "Tea" and written[4] == "a9", written
+assert written[6], "Transaction ID should be generated into the last column"
+print("  -> each value under its own header; schema order would have scrambled this")
 
 print("\n=== missing tab error names it ===")
 try: client.get_allocations()

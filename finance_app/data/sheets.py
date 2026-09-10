@@ -26,10 +26,15 @@ from google.oauth2.service_account import Credentials
 
 from finance_app.config import Config, get_config
 from finance_app.data.models import (
+    ALLOCATION_PERCENT_TYPE,
+    ALLOCATION_TYPE_COLUMN,
+    ALLOCATION_VALUE_COLUMN,
     BOOL,
     CONFIG_COLUMNS,
+    CONFIG_KEY_ALIASES,
     CONFIG_TAB,
     DATE,
+    DUE_DAY_COLUMN,
     INT,
     MONEY,
     NUMBER,
@@ -45,6 +50,8 @@ from finance_app.data.models import (
     SavingsGoal,
     Transaction,
     WishlistItem,
+    resolve,
+    resolve_columns,
     to_row,
 )
 
@@ -165,13 +172,81 @@ def _frame(values: list[list[str]], columns: tuple[Column, ...]) -> pd.DataFrame
     # Drop rows that are entirely blank (trailing formatting in the sheet).
     raw = raw[~(raw.map(lambda v: str(v).strip() == "")).all(axis=1)]
 
+    raw = _adapt(raw, columns)
+    positions = resolve_columns(columns, raw.columns)
+
     out = pd.DataFrame(index=raw.index)
     for column in columns:
-        source = raw[column.header] if column.header in raw.columns else pd.Series(
+        index = positions.get(column.header)
+        source = raw.iloc[:, index] if index is not None else pd.Series(
             [""] * len(raw), index=raw.index
         )
         out[column.header] = _coerce(source, column.kind)
     return out.reset_index(drop=True)
+
+
+def _adapt(raw: pd.DataFrame, columns: tuple[Column, ...]) -> pd.DataFrame:
+    """Synthesize canonical columns a foreign layout stores differently.
+
+    Runs on the raw strings before coercion and only ever *adds* columns, so a
+    workbook already using the canonical names is returned untouched. Each
+    case is recognised by the canonical column being absent while the columns
+    it can be derived from are present, which is unambiguous — no tab has both
+    shapes at once.
+    """
+    wanted = {column.header for column in columns}
+    have = set(resolve_columns(columns, raw.columns))
+    present = {str(name).strip() for name in raw.columns}
+
+    # _Recurring: a day-of-month in place of a due date.
+    if "Next Due" in wanted and "Next Due" not in have and DUE_DAY_COLUMN in present:
+        raw = raw.copy()
+        raw["Next Due"] = [_next_due(value) for value in raw[DUE_DAY_COLUMN]]
+
+    # _Allocations: one value column plus a fixed/percent discriminator.
+    if (
+        {"Percent", "Amount"} <= wanted
+        and not ({"Percent", "Amount"} & have)
+        and {ALLOCATION_TYPE_COLUMN, ALLOCATION_VALUE_COLUMN} <= present
+    ):
+        raw = raw.copy()
+        kinds = raw[ALLOCATION_TYPE_COLUMN].astype(str).str.strip().str.lower()
+        is_percent = kinds == ALLOCATION_PERCENT_TYPE
+        # The half that does not apply is zero, not blank: a fixed rule
+        # allocates 0% and a percentage rule allocates $0, which is what the
+        # Allocation model defaults to. Blank would coerce to NaN and leak
+        # into every total downstream.
+        raw["Percent"] = raw[ALLOCATION_VALUE_COLUMN].where(is_percent, "0")
+        raw["Amount"] = raw[ALLOCATION_VALUE_COLUMN].where(~is_percent, "0")
+
+        # An allocation switched off is not a standing rule. _Allocations has
+        # no Active column of its own, so a layout that carries one is
+        # filtered here rather than silently counted.
+        if "Active" not in wanted and "active" in present:
+            raw = raw[raw["active"].map(_to_bool)]
+
+    return raw
+
+
+def _next_due(day: Any) -> str:
+    """Next occurrence of day-of-month ``day``, as ``YYYY-MM-DD``.
+
+    Today counts as due — a bill dated today has not been paid yet. A day past
+    the end of a short month lands on that month's last day rather than
+    rolling into the next one, so a 31st bill stays in February.
+    """
+    number = _to_float(day)
+    if number is None:
+        return ""
+
+    today = pd.Timestamp.today().normalize()
+    wanted = int(min(max(number, 1), 31))
+    for start in (today, today + pd.offsets.MonthBegin(1)):
+        last = start + pd.offsets.MonthEnd(0)
+        candidate = start.replace(day=min(wanted, last.day))
+        if candidate >= today:
+            return candidate.strftime("%Y-%m-%d")
+    return ""
 
 
 # --------------------------------------------------------------------------
@@ -299,13 +374,28 @@ class SheetsClient:
         return self._read(SavingsGoal.TAB)
 
     def get_config(self) -> dict[str, str]:
-        """``_Config`` as a plain key/value dict, skipping blank keys."""
+        """``_Config`` as a plain key/value dict, skipping blank keys.
+
+        Keys are returned as written, plus a canonical entry for any
+        recognised alias — a workbook storing ``paycheck_net`` is also
+        readable as ``paycheck_amount``. A key already present under its
+        canonical name always wins, so an alias can never shadow it.
+        """
         frame = self._read(CONFIG_TAB)
-        return {
+        settings = {
             str(key).strip(): str(value)
             for key, value in zip(frame["Key"], frame["Value"])
             if str(key).strip()
         }
+
+        for canonical, aliases in CONFIG_KEY_ALIASES.items():
+            if canonical in settings:
+                continue
+            for alias in aliases:
+                if alias in settings:
+                    settings[canonical] = settings[alias]
+                    break
+        return settings
 
     # -- writes ------------------------------------------------------------
 
@@ -646,26 +736,52 @@ class SheetsClient:
     # -- write helpers -----------------------------------------------------
 
     def _append(self, model: type, df: pd.DataFrame, id_header: str) -> int:
-        """Append a DataFrame to ``model``'s tab as one batched API call."""
+        """Append a DataFrame to ``model``'s tab as one batched API call.
+
+        Cells are placed by the tab's *live* header row, not by schema order:
+        a tab whose columns sit in a different order, or under alias names,
+        would otherwise take every value one column across from where it
+        belongs. Columns the sheet does not have are dropped rather than
+        appended, since widening a tab mid-write is not this method's job.
+        """
         tab = model.TAB
         _guard_write(tab)
         if df is None or df.empty:
             return 0
 
         columns = SCHEMA[tab]
+        worksheet = self._worksheet(tab)
+
+        # Deliberately not the read cache. A header cached up to five minutes
+        # ago could be stale, and aligning to a stale header writes every
+        # value one column across — silent, and in the sheet. One extra read
+        # per append is worth ruling that out; appends are rare.
+        try:
+            live = [str(cell).strip() for cell in worksheet.row_values(1)]
+        except Exception as exc:  # noqa: BLE001
+            raise SheetsError(f"Failed reading the header of tab {tab!r}: {exc}") from exc
+
+        positions = resolve_columns(columns, live) if live else {}
+        if not positions:
+            # An unheadered tab has nothing to align to, so fall back to
+            # schema order — which is what such a tab will get on creation.
+            positions = {column.header: index for index, column in enumerate(columns)}
+        width = max(positions.values()) + 1
+        kinds = {column.header: column.kind for column in columns}
+
         rows: list[list[Any]] = []
         for _, record in df.iterrows():
-            row: list[Any] = []
-            for column in columns:
-                value = record.get(column.header, "")
-                if column.header == id_header and _blank(value):
+            row: list[Any] = [""] * width
+            for header, index in positions.items():
+                value = record.get(header, "")
+                if header == id_header and _blank(value):
                     value = new_id()
-                row.append(_cell(value, column.kind))
+                row[index] = _cell(value, kinds[header])
             rows.append(row)
 
         try:
             with _writing(f"Writing {len(rows)} row(s) to {tab}…"):
-                self._worksheet(tab).append_rows(rows, value_input_option="USER_ENTERED")
+                worksheet.append_rows(rows, value_input_option="USER_ENTERED")
         except SheetsError:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -766,23 +882,50 @@ def validate_schema(client: SheetsClient | None = None) -> list[str]:
         expected_headers = [c.header for c in SCHEMA[tab]]
         if actual == expected_headers:
             continue
-        for name in expected_headers:
-            if name not in actual:
-                problems.append(f"{tab}: missing column {name!r}")
-        extra = [name for name in actual if name and name not in expected_headers]
-        if extra:
-            problems.append(f"{tab}: unexpected column(s) {extra}")
+
         if not actual:
             problems.append(f"{tab}: header row is empty")
-        elif sorted(n for n in actual if n) == sorted(expected_headers):
-            # Same columns, different order. Appends write in schema order, so
-            # this would silently shift every value one column over.
-            problems.append(
-                f"{tab}: columns are out of order — expected {expected_headers}, "
-                f"found {actual}"
-            )
+            continue
+
+        # A column counts as present under any of its spellings, and a
+        # derived layout supplies some columns without holding them.
+        found = resolve(tab, actual)
+        derived = _derivable(tab, actual)
+        for column in SCHEMA[tab]:
+            name = column.header
+            if name in found or name in derived or column.optional:
+                continue
+            problems.append(f"{tab}: missing column {name!r}")
+
+        known = {name for column in SCHEMA[tab] for name in column.names}
+        extra = [
+            name for name in actual
+            if name and name not in known and name not in _FOREIGN_COLUMNS
+        ]
+        if extra:
+            problems.append(f"{tab}: unexpected column(s) {extra}")
 
     return problems
+
+
+#: Columns a foreign layout carries that the schema derives from rather than
+#: reads directly. Reported as understood, not as clutter.
+_FOREIGN_COLUMNS: frozenset[str] = frozenset(
+    {DUE_DAY_COLUMN, ALLOCATION_TYPE_COLUMN, ALLOCATION_VALUE_COLUMN, "active", "merchant"}
+)
+
+
+def _derivable(tab: str, actual: Iterable[str]) -> set[str]:
+    """Canonical columns of ``tab`` that :func:`_adapt` can synthesize."""
+    present = {str(name).strip() for name in actual}
+    derived: set[str] = set()
+    if tab == RecurringExpense.TAB and DUE_DAY_COLUMN in present:
+        derived.add("Next Due")
+    if tab == Allocation.TAB and {
+        ALLOCATION_TYPE_COLUMN, ALLOCATION_VALUE_COLUMN
+    } <= present:
+        derived |= {"Percent", "Amount"}
+    return derived
 
 
 # --------------------------------------------------------------------------
@@ -791,12 +934,22 @@ def validate_schema(client: SheetsClient | None = None) -> list[str]:
 
 
 def _index_of(header: Iterable[str], name: str, tab: str) -> int:
-    """Position of ``name`` in ``header``, or a SheetsError naming the tab."""
+    """Position of the column ``name`` names in ``header``.
+
+    Resolves through the schema, so a tab spelling the column ``account_id``
+    is found by its canonical name ``Account ID``. Raises a SheetsError naming
+    the tab and what it actually has when nothing matches.
+    """
     header = list(header)
+    position = resolve(tab, header).get(name)
+    if position is not None:
+        return position
     try:
         return header.index(name)
     except ValueError as exc:
-        raise SheetsError(f"Tab {tab!r} has no {name!r} column (found {header}).") from exc
+        raise SheetsError(
+            f"Tab {tab!r} has no {name!r} column (found {header})."
+        ) from exc
 
 
 def _blank(value: Any) -> bool:
