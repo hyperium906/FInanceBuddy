@@ -1,0 +1,10 @@
+streamlit
+gspread
+google-auth
+pandas
+google-genai
+python-dotenv
+requests
+beautifulsoup4
+extruct
+
