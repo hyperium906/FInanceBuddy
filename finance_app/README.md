@@ -117,7 +117,7 @@ Community Cloud is built for exactly that, and is free.
 1. Push to GitHub. The repo may be private; Community Cloud can read it.
 2. At [share.streamlit.io](https://share.streamlit.io), **Create app** → pick
    the repo and branch, and set **Main file path** to `finance_app/app.py`.
-3. Under **Advanced settings**, set the Python version to **3.13** and open
+3. Under **Advanced settings**, set the Python version to **3.14** and open
    **Secrets**. Paste the contents of `.streamlit/secrets.toml.example` and
    fill it in — including `GOOGLE_CREDS_JSON`, which is the whole downloaded
    key file, braces and all. Do not set `GOOGLE_CREDS_PATH` there; the file is
