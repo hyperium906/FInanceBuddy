@@ -44,6 +44,16 @@ SAVINGS_TARGET_KEY = "monthly_savings_target"
 #: already writes its allocation rows under ``Transfer`` for this reason.
 MOVEMENT_CATEGORIES: frozenset[str] = frozenset({"transfer", "savings"})
 
+#: Categories where money coming back nets against money going out, lower-cased.
+#:
+#: Distinct from a refund, which deliberately does *not* net: returning a
+#: sweater must not quietly free up budget to buy another one. A
+#: reimbursement is the opposite case — you fronted the money for someone
+#: else, so the part they repaid was never your spending at all. Netting
+#: leaves precisely what you are still owed, and a fully repaid purchase
+#: disappears instead of consuming a budget you set for your own spending.
+NETTING_CATEGORIES: frozenset[str] = frozenset({"reimbursable"})
+
 
 # --------------------------------------------------------------------------
 # Small shared helpers
@@ -473,9 +483,13 @@ def spending_by_category(
 ) -> pd.DataFrame:
     """Money spent per category in ``month``, as positive amounts.
 
-    Only outgoing amounts count; income and refunds are excluded so a refund
-    cannot mask overspending in a category. Movements between your own
-    accounts are excluded too — see :data:`MOVEMENT_CATEGORIES`.
+    Outgoing amounts count and income does not. A refund deliberately does
+    **not** reduce its category: returning a sweater must not quietly free up
+    budget to buy another one. Movements between your own accounts are
+    excluded entirely (:data:`MOVEMENT_CATEGORIES`), and the categories in
+    :data:`NETTING_CATEGORIES` are the one exception to the refund rule —
+    money repaid to you there was never your spending, so it nets off, floored
+    at zero because being repaid more than you laid out is not income either.
     """
     columns = ["Category", "Actual"]
     if transactions is None or transactions.empty:
@@ -485,17 +499,29 @@ def spending_by_category(
     start, end = month_bounds(target)
     when = _dates(transactions, "Date")
     amounts = _num(transactions, "Amount")
-    moved = _text(transactions, "Category").isin(MOVEMENT_CATEGORIES)
-    rows = transactions[(when >= start) & (when <= end) & (amounts < 0) & (~moved)]
-    if rows.empty:
-        return pd.DataFrame(columns=columns)
+    names = _text(transactions, "Category")
+    window = (when >= start) & (when <= end) & (~names.isin(MOVEMENT_CATEGORIES))
 
-    spend = (-_num(rows, "Amount")).groupby(
-        rows["Category"].fillna("").astype(str).str.strip().replace("", "Uncategorized")
-    ).sum()
-    out = spend.reset_index()
-    out.columns = columns
-    return out.sort_values("Actual", ascending=False, kind="stable").reset_index(drop=True)
+    label = (
+        transactions["Category"].fillna("").astype(str).str.strip().replace("", "Uncategorized")
+        if "Category" in transactions.columns
+        else pd.Series(["Uncategorized"] * len(transactions), index=transactions.index)
+    )
+
+    out = window & (amounts < 0)
+    if not out.any():
+        return pd.DataFrame(columns=columns)
+    spend = (-amounts[out]).groupby(label[out]).sum()
+
+    # Repayments into a netting category cancel the outlay that created them.
+    back = window & (amounts > 0) & names.isin(NETTING_CATEGORIES)
+    if back.any():
+        repaid = amounts[back].groupby(label[back]).sum()
+        spend = (spend - repaid.reindex(spend.index).fillna(0.0)).clip(lower=0.0)
+
+    result = spend.reset_index()
+    result.columns = columns
+    return result.sort_values("Actual", ascending=False, kind="stable").reset_index(drop=True)
 
 
 def budget_vs_actual(
@@ -588,13 +614,24 @@ def income_vs_spending(
     keys = when.dt.strftime("%Y-%m")
     # Both sides drop movements: a transfer in is not income, and the transfer
     # out that funded it is not spending. Leaving them in reports both.
-    moved = _text(transactions, "Category").isin(MOVEMENT_CATEGORIES)
+    names = _text(transactions, "Category")
+    moved = names.isin(MOVEMENT_CATEGORIES)
     valid = when.notna() & keys.isin(window) & (~moved)
     if not valid.any():
         return frame
 
-    income = amounts[valid & (amounts > 0)].groupby(keys[valid & (amounts > 0)]).sum()
-    spend = (-amounts[valid & (amounts < 0)]).groupby(keys[valid & (amounts < 0)]).sum()
+    # A repayment is not earnings, so it is kept out of income and subtracted
+    # from spending instead — the same netting spending_by_category applies.
+    netting = names.isin(NETTING_CATEGORIES)
+    earned = valid & (amounts > 0) & (~netting)
+    paid_out = valid & (amounts < 0)
+    repaid = valid & (amounts > 0) & netting
+
+    income = amounts[earned].groupby(keys[earned]).sum()
+    spend = (-amounts[paid_out]).groupby(keys[paid_out]).sum()
+    if repaid.any():
+        credit = amounts[repaid].groupby(keys[repaid]).sum()
+        spend = (spend - credit.reindex(spend.index).fillna(0.0)).clip(lower=0.0)
 
     frame["Income"] = frame["Month"].map(income).fillna(0.0).astype(float)
     frame["Spending"] = frame["Month"].map(spend).fillna(0.0).astype(float)

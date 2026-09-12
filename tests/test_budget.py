@@ -422,3 +422,80 @@ class TestMovementsAreNotSpending:
         assert dict(zip(spend["Category"], spend["Actual"])) == {
             "Debt": 1500.0, "Groceries": 120.0
         }
+
+
+class TestReimbursementsNetButRefundsDoNot:
+    """The one category where money coming back cancels money going out.
+
+    A refund must not reduce its category — returning a sweater cannot be
+    allowed to free up budget for another one. A reimbursement is the opposite
+    case: you fronted the money for someone else, so the repaid part was never
+    your spending. Both rules have to hold at once.
+    """
+
+    @staticmethod
+    def _ledger(category: str) -> pd.DataFrame:
+        return pd.DataFrame([
+            {"Transaction ID": "r1", "Date": pd.Timestamp("2026-09-11"),
+             "Account ID": "chk", "Description": "Aldi - food for the BBQ",
+             "Category": category, "Amount": -110.34, "Notes": ""},
+            {"Transaction ID": "r2", "Date": pd.Timestamp("2026-09-11"),
+             "Account ID": "chk", "Description": "Cash App from a friend",
+             "Category": category, "Amount": 25.49, "Notes": ""},
+            {"Transaction ID": "r3", "Date": pd.Timestamp("2026-09-11"),
+             "Account ID": "chk", "Description": "Venmo from a friend",
+             "Category": category, "Amount": 51.09, "Notes": ""},
+            {"Transaction ID": "r4", "Date": pd.Timestamp("2026-09-06"),
+             "Account ID": "chk", "Description": "My own food",
+             "Category": "Groceries", "Amount": -7.22, "Notes": ""},
+        ])
+
+    def test_repayments_net_off_what_you_fronted(self):
+        spend = B.spending_by_category(self._ledger("Reimbursable"), "2026-09")
+        assert dict(zip(spend["Category"], spend["Actual"])) == {
+            "Reimbursable": pytest.approx(33.76),   # 110.34 - 76.58
+            "Groceries": pytest.approx(7.22),
+        }
+
+    def test_a_refund_to_an_ordinary_category_does_not_net(self):
+        """The same three rows under Groceries still read as full spending."""
+        spend = B.spending_by_category(self._ledger("Groceries"), "2026-09")
+        assert dict(zip(spend["Category"], spend["Actual"])) == {
+            "Groceries": pytest.approx(117.56)      # 110.34 + 7.22, repayments ignored
+        }
+
+    def test_being_repaid_in_full_clears_the_category(self):
+        ledger = self._ledger("Reimbursable")
+        ledger.loc[ledger["Transaction ID"] == "r3", "Amount"] = 84.85
+        spend = B.spending_by_category(ledger, "2026-09")
+        assert "Reimbursable" not in set(spend["Category"]) or spend.loc[
+            spend["Category"] == "Reimbursable", "Actual"
+        ].iloc[0] == pytest.approx(0.0)
+
+    def test_being_overpaid_is_not_income(self):
+        """Floored at zero: a generous friend does not earn you a credit."""
+        ledger = self._ledger("Reimbursable")
+        ledger.loc[ledger["Transaction ID"] == "r3", "Amount"] = 500.00
+        spend = B.spending_by_category(ledger, "2026-09")
+        actual = spend.loc[spend["Category"] == "Reimbursable", "Actual"]
+        assert actual.empty or actual.iloc[0] == pytest.approx(0.0)
+
+    def test_a_repayment_is_not_income_on_the_trend(self):
+        row = B.income_vs_spending(
+            self._ledger("Reimbursable"), months=1, today=pd.Timestamp("2026-09-12")
+        ).iloc[0]
+        assert row["Income"] == pytest.approx(0.0)
+        assert row["Spending"] == pytest.approx(40.98)   # 117.56 - 76.58
+
+    def test_the_budget_page_sees_the_netted_figure(self):
+        budgets = pd.DataFrame([
+            {"Budget ID": "b1", "Month": "2026-09", "Category": "Groceries",
+             "Amount": 250.0, "Notes": ""},
+        ])
+        table = B.budget_vs_actual(
+            self._ledger("Reimbursable"), budgets, "2026-09",
+            today=pd.Timestamp("2026-09-12"),
+        )
+        row = table[table["Category"] == "Groceries"].iloc[0]
+        assert row["Actual"] == pytest.approx(7.22)
+        assert row["Remaining"] == pytest.approx(242.78)

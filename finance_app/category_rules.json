@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "comment": "Merchant substring -> category. Matched case-insensitively against the scrubbed merchant name; the longest matching pattern wins. Edit freely \u2014 the app appends learned rules here when you recategorize a transaction by hand.",
+  "comment": "Merchant substring -> category. Matched case-insensitively against the scrubbed merchant name; the longest matching pattern wins. Edit freely \u2014 the app appends learned rules here when you recategorize a transaction by hand. A rule may also point at \"Uncategorized\" on purpose: that stops the model tier guessing at a merchant whose category genuinely varies transaction by transaction, and leaves the row for you in the preview.",
   "rules": [
     {
       "match": "trader joe",
@@ -469,6 +469,22 @@
     {
       "match": "hope church",
       "category": "Giving"
+    },
+    {
+      "match": "venmo",
+      "category": "Uncategorized"
+    },
+    {
+      "match": "cash app",
+      "category": "Uncategorized"
+    },
+    {
+      "match": "zelle",
+      "category": "Uncategorized"
+    },
+    {
+      "match": "apple cash",
+      "category": "Uncategorized"
     }
   ]
 }

@@ -47,6 +47,12 @@ CATEGORIES: tuple[str, ...] = (
     "Shopping",
     "Health",
     "Debt",
+    # Money you front for other people — a group meal, a shared trip, tickets
+    # for the table. It is genuinely spent until they pay you back, so it is
+    # not a transfer; but it was never your money, so it must not eat a budget
+    # you set for yourself. Inflows here net against outflows, leaving exactly
+    # what you are still out of pocket.
+    "Reimbursable",
     "Income",
     # Moving money between your own accounts. The Budget page already writes
     # allocation rows under this name and affordability.py already excludes it
