@@ -193,6 +193,48 @@ def test_inline_json_missing_a_required_field(
         C.load_config()
 
 
+# -- the shipped secrets template ------------------------------------------
+
+
+def test_secrets_template_parses_and_loads(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The committed template is the thing people paste into a host. If it does
+    not survive a TOML parse into a working config, the first deploy fails with
+    a confusing error and the template is where the fault lies.
+
+    This caught a real bug: the template used TOML triple-DOUBLE quotes around
+    the raw key JSON. Those process escapes, so every literal backslash-n in
+    `private_key` became a real newline and the JSON stopped parsing.
+    """
+    import tomllib
+
+    template = Path(__file__).resolve().parents[1] / ".streamlit" / "secrets.toml.example"
+    values = tomllib.loads(template.read_text())
+
+    assert set(C.REQUIRED_VARS) <= set(values), "template is missing a required variable"
+
+    for name, value in values.items():
+        monkeypatch.setenv(name, str(value))
+    # The template ships a placeholder key, so swap in a structurally real one
+    # while keeping the template's own encoding choice.
+    monkeypatch.setenv(
+        "GOOGLE_CREDS_JSON",
+        base64.b64encode(json.dumps(FAKE_KEY).encode()).decode(),
+    )
+    settings = C.load_config()
+    assert settings.google_creds_info == FAKE_KEY
+    assert settings.google_sheet_id
+
+
+def test_raw_json_in_a_toml_double_quoted_string_is_rejected_clearly() -> None:
+    """The shape the broken template produced. It must not reach google-auth as
+    a half-mangled key; config should name the problem."""
+    import tomllib
+
+    mangled = tomllib.loads('K = """\n' + json.dumps(FAKE_KEY, indent=2) + '\n"""\n')["K"]
+    with pytest.raises(C.ConfigError, match="not valid JSON"):
+        C._decode_creds_json(mangled)
+
+
 # -- the Streamlit secrets fallback ----------------------------------------
 
 
