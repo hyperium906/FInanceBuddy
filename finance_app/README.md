@@ -2,12 +2,12 @@
 
 A personal finance dashboard built with Streamlit, backed by a Google Sheet.
 
-Seven pages: a **Dashboard** of headline numbers, a **Budget** page with
+Eight pages: a **Dashboard** of headline numbers, a **Budget** page with
 paycheck allocation and a daily burn rate, a **Debts** page that simulates the
-payoff month by month, a searchable **Transactions** ledger, a CSV **Import**
-with automatic categorization, a **Wishlist**, and a **Buy Advisor** that tells
-you whether a purchase is a good idea — with the arithmetic done in Python, not
-by a model.
+payoff month by month, a **Goals** page that projects when each one lands, a
+searchable **Transactions** ledger, a CSV **Import** with automatic
+categorization, a **Wishlist**, and a **Buy Advisor** that tells you whether a
+purchase is a good idea — with the arithmetic done in Python, not by a model.
 
 ---
 
@@ -275,6 +275,46 @@ Recording a payment writes the new balance to `_Debts` only. It does not add a
 row to `_Transactions`, so your statement import stays the single source of
 truth for what actually moved.
 
+### Goals
+
+The distinction this page is built around is between a goal that is **behind**
+and one whose pace is merely **unknown**. A goal with no rows in `_Allocations`
+has not failed — nothing has been measured — so it reads *No history*, never
+*Behind*. Collapsing those two invents a problem out of missing data.
+
+Each goal lands where its **observed pace** puts it, averaged over the last
+three months of `_Allocations`, not where its requirement says it should. A goal
+with no history is projected at zero and reads "never at this pace" rather than
+borrowing another goal's rate.
+
+**Needed per month** counts dated goals only. `required_monthly` returns an
+undated goal's *entire* remaining balance — correct for the conservative savings
+target the Dashboard uses, since a goal with no date cannot be spread over a
+schedule it does not have. Summing that into a per-month headline is a different
+matter: one undated goal would swamp the figure and report a monthly need nobody
+has. The undated remainder is shown separately.
+
+**Splitting a lump sum** — a bonus, a refund, a third paycheck — offers two
+divisions, and writes nothing:
+
+| | Divides by | Leaves you |
+| --- | --- | --- |
+| **Soonest deadline first** | Target date, undated last | The most urgent goal filled outright |
+| **Split by what each needs** | Monthly requirement | Every goal advanced at once |
+
+No goal is ever given more than it still needs. Under the proportional split a
+goal whose share exceeds its remaining balance is capped and the excess flows to
+the others, so a nearly-finished goal cannot swallow the difference; whatever
+genuinely cannot be absorbed comes back as leftover rather than being forced
+somewhere.
+
+**Contributing** writes twice — the new total to `_Goals`, then a row to
+`_Allocations` for the current month, which is what builds the pace history. Two
+tabs means no transaction spanning them, so the absolute figure goes first: a
+retry lands on the same number, and a failure after it leaves the goal's total
+correct with only its history short. The error says exactly that rather than
+reporting a clean success over a half-write.
+
 ### Transactions
 
 Everything already in `_Transactions`, filtered down to what you want to look
@@ -351,14 +391,15 @@ render; only the prose is missing.
 pytest
 ```
 
-268 tests, all offline — no API key, no network, no quota, no Google account.
+310 tests, all offline — no API key, no network, no quota, no Google account.
 `tests/conftest.py` holds synthetic DataFrames; `tests/checks/` holds
 longer narrative regression scripts that `pytest` runs as subprocesses.
 
 Covered edge cases include a zero-income month, negative and overdrawn
 balances, a category with no budget set, an item priced above all available
-cash, a month with no transactions at all, and a debt whose minimum payment is
-smaller than its own monthly interest.
+cash, a month with no transactions at all, a debt whose minimum payment is
+smaller than its own monthly interest, and a savings goal with no contribution
+history to judge it by.
 
 ---
 
@@ -412,6 +453,7 @@ finance_app/
   logic/            pure functions: no Streamlit, no Sheets, no network
     budget.py       dashboard and planning math
     debt.py         payoff simulation, avalanche and snowball
+    goals.py        goal status, projection, and splitting a lump sum
     paycheck.py     bi-weekly pay dates and allocation splitting
     affordability.py  purchase decisions and the verdict thresholds
     categorize.py   two-tier transaction categorization

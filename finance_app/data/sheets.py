@@ -736,6 +736,26 @@ class SheetsClient:
         clear_cache()
         return record.allocation_id
 
+    def append_goal(self, goal: SavingsGoal) -> str:
+        """Append one row to ``_Goals`` and return its Goal ID."""
+        record = goal
+        if not record.goal_id:
+            record = SavingsGoal(**{**_as_dict(goal), "goal_id": new_id("g")})
+
+        tab = SavingsGoal.TAB
+        _guard_write(tab)
+        try:
+            with _writing("Adding goal…"):
+                self._worksheet(tab).append_rows(
+                    [to_row(record)], value_input_option="USER_ENTERED"
+                )
+        except SheetsError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise SheetsError(f"Failed appending to tab {tab!r}: {exc}") from exc
+        clear_cache()
+        return record.goal_id
+
     def update_goal_saved(self, goal_id: str, saved_amount: float) -> None:
         """Set a ``_Goals`` row's Saved Amount."""
         self._update_cells(
@@ -744,6 +764,52 @@ class SheetsClient:
             updates={"Saved Amount": saved_amount},
             missing=f"No goal with Goal ID {goal_id!r}.",
         )
+
+    def update_goal(self, goal_id: str, **fields: Any) -> None:
+        """Set any subset of one ``_Goals`` row's fields in a single batch."""
+        if not fields:
+            return
+        self._update_cells(
+            tab=SavingsGoal.TAB,
+            match={"Goal ID": goal_id},
+            updates=dict(fields),
+            missing=f"No goal with Goal ID {goal_id!r}.",
+        )
+
+    def contribute_to_goal(
+        self,
+        goal_id: str,
+        bucket: str,
+        amount: float,
+        new_saved: float,
+        month: str,
+        account_id: str = "",
+        notes: str = "",
+    ) -> str:
+        """Record money moving into a goal: the new total, then the history row.
+
+        Two tabs, so two writes, and no transaction spanning them. The order is
+        chosen for what a retry does. ``new_saved`` is an absolute figure the
+        caller computed from a fresh read, so re-running it lands on the same
+        number; the ``_Allocations`` row is what a retry would duplicate. Doing
+        the absolute write first means a failure here leaves the goal's own
+        total correct and only its pace history short — which the message says
+        outright, because a silent half-write is how a sheet starts lying.
+        """
+        self.update_goal_saved(goal_id, new_saved)
+        try:
+            return self.add_allocation(
+                month=month, bucket=bucket, amount=amount,
+                account_id=account_id, notes=notes,
+            )
+        except SheetsError as exc:
+            raise SheetsError(
+                f"The goal's Saved Amount was updated to {new_saved:,.2f}, but "
+                f"recording the contribution in _Allocations failed: {exc} "
+                "The goal total is correct; its pace history is missing this "
+                "month. Add the _Allocations row by hand, or contribute again "
+                "and correct the Saved Amount afterwards."
+            ) from exc
 
     def update_debt_balance(self, debt_id: str, balance: float) -> None:
         """Set a ``_Debts`` row's Balance."""

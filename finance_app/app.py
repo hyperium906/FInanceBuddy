@@ -23,6 +23,7 @@ from finance_app.pages_ui import (  # noqa: E402
     buy_advisor,
     dashboard,
     debts,
+    goals,
     import_preview,
     shell,
     transactions,
@@ -45,6 +46,11 @@ def render_budget() -> None:
 def render_debts() -> None:
     """Order the debts, see the payoff date, and record a payment."""
     debts.render()
+
+
+def render_goals() -> None:
+    """Track savings goals, contribute to them, and split a windfall."""
+    goals.render()
 
 
 def render_transactions() -> None:
@@ -71,6 +77,7 @@ PAGES = {
     "Dashboard": render_dashboard,
     "Budget": render_budget,
     "Debts": render_debts,
+    "Goals": render_goals,
     "Transactions": render_transactions,
     "Import": render_import,
     "Wishlist": render_wishlist,
