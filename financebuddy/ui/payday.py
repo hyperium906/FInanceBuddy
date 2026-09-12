@@ -14,6 +14,7 @@ import pandas as pd
 import streamlit as st
 
 from financebuddy.core import allocations as A
+from financebuddy.core import commitments as K
 from financebuddy.core import periods as P
 from financebuddy.core import recurring as R
 from financebuddy.core import spending as S
@@ -36,18 +37,22 @@ def render() -> None:
     shell.period_nav(period, today)
     st.divider()
 
-    plan = A.plan(data["allocations"], paycheck, period, transactions)
-    summary = S.summarise(transactions, period, committed=plan.due)
+    anchor, cadence = P.read_anchor(config), P.read_cadence(config)
+    check = K.for_check(period, paycheck, data["recurring"], data["allocations"],
+                        anchor, cadence, transactions)
+    summary = S.summarise(transactions, period, committed=check.committed)
 
-    _headline(summary, plan, period, today)
+    _headline(check, summary, today)
     st.divider()
-    _still_to_move(plan)
+    _what_this_check_covers(check)
+    st.divider()
+    _still_to_move(check.allocation)
     st.divider()
     _left_to_spend(transactions, data["budgets"], period, today)
     st.divider()
     _where_it_went(transactions, period)
     st.divider()
-    _before_the_next_check(data["recurring"], period, today)
+    _the_month_ahead(anchor, paycheck, data, cadence, today)
 
 
 # --------------------------------------------------------------------------
@@ -55,41 +60,77 @@ def render() -> None:
 # --------------------------------------------------------------------------
 
 
-def _headline(
-    summary: S.PeriodSummary, plan: A.Plan, period: P.PayPeriod, today
-) -> None:
-    """In, committed, spent, and what is genuinely free."""
-    columns = st.columns(4)
-    columns[0].metric(
-        "Came in", fc(summary.income),
-        f"paycheck {fc(plan.paycheck)}" if plan.paycheck else None,
-        delta_color="off",
+def _headline(check: K.CheckPlan, summary: S.PeriodSummary, today) -> None:
+    """What this check is, what it owes, and what is genuinely left."""
+    ordinal = {1: "first", 2: "second", 3: "third"}.get(check.which, f"{check.which}th")
+    st.markdown(
+        f"**The {ordinal} of {check.of} checks in {check.period.payday:%B}.**"
+        + (
+            f" Almost all of it is **{check.dominant.name}** "
+            f"({fc(check.dominant.amount)}) — this is the rent check."
+            if check.dominant
+            else ""
+        )
     )
+
+    columns = st.columns(4)
+    columns[0].metric("Paycheck", fc(check.paycheck))
     columns[1].metric(
-        "Has to move", fc(plan.due),
-        f"{fc(plan.outstanding)} still to go" if plan.outstanding > 0.01 else "all moved",
+        "Bills", fc(check.bills_total),
+        f"{len(check.bills)} due before {check.period.end:%d %b}",
         delta_color="off",
     )
     columns[2].metric(
-        "Spent so far", fc(summary.spent),
-        f"day {period.elapsed(today)} of {period.days}",
+        "Transfers", fc(check.moves_total),
+        "first check of the month" if check.which == 1 else "percentage rules only",
         delta_color="off",
     )
-
-    free = summary.free
-    left_per_day = free / max(period.remaining(today), 1)
     columns[3].metric(
-        "Free to spend", fc(free),
-        f"{fc(left_per_day)}/day for {period.remaining(today)} days",
-        delta_color="off" if free >= 0 else "inverse",
+        "Left to live on", fc(check.left),
+        f"{fc(check.per_day)}/day over {check.period.days} days",
+        delta_color="off" if not check.short else "inverse",
     )
 
-    if free < 0:
+    if check.short:
         st.warning(
-            f"This period is **{fc(-free)} short**: what came in does not cover "
-            "what has been spent plus what the standing rules claim. Either a "
-            "move has to wait or something has to come back out of a bucket."
+            f"**This check is {fc(-check.left)} short.** Its bills and transfers "
+            f"come to {fc(check.committed)} against {fc(check.paycheck)} coming "
+            "in, so the difference has to be carried over from the previous "
+            "check rather than found here."
         )
+    st.caption(
+        f"Spent so far this period: **{fc(summary.spent)}** "
+        f"(day {check.period.elapsed(today)} of {check.period.days})."
+    )
+
+
+# --------------------------------------------------------------------------
+# What this check covers
+# --------------------------------------------------------------------------
+
+
+def _what_this_check_covers(check: K.CheckPlan) -> None:
+    """The bills this paycheck is responsible for, at their full amounts."""
+    st.subheader("What this check covers")
+
+    if not check.bills:
+        st.info(f"No bills fall before {check.period.end:%d %b}.")
+        return
+
+    st.caption(
+        "Each bill is charged whole to the last check before it is due — not "
+        "split across checks, because that is not how any of them are paid."
+    )
+    st.dataframe(
+        pd.DataFrame({
+            "Due": [f"{b.due:%a %d %b}" for b in check.bills],
+            "What": [b.name for b in check.bills],
+            "Category": [b.category or "—" for b in check.bills],
+            "Amount": [fc(b.amount) for b in check.bills],
+        }),
+        hide_index=True,
+        width="stretch",
+    )
 
 
 # --------------------------------------------------------------------------
@@ -247,39 +288,48 @@ def _where_it_went(transactions, period: P.PayPeriod) -> None:
 
 
 # --------------------------------------------------------------------------
-# What bills before the next check
+# The checks ahead
 # --------------------------------------------------------------------------
 
 
-def _before_the_next_check(recurring, period: P.PayPeriod, today) -> None:
-    """Recurring charges landing between now and the next payday."""
-    st.subheader("Before your next check")
+def _the_month_ahead(anchor, paycheck: float, data, cadence: str, today) -> None:
+    """The next few checks and what each has to carry.
 
-    start = max(pd.Timestamp(today).normalize(), period.start)
-    horizon = int((period.end - start).days)
-    if horizon < 0:
-        st.caption("This period is over.")
-        return
+    Seeing the rent check a fortnight early is the point: a comfortable check
+    followed by a short one is something to plan around, not to discover on
+    the day.
+    """
+    st.subheader("The checks ahead")
 
-    upcoming = R.upcoming(recurring, today=start, horizon_days=horizon)
-    if upcoming.empty:
-        st.success(f"Nothing else bills before {period.end:%d %b}.")
-        return
-
-    total = float(upcoming["Amount"].sum())
-    st.caption(
-        f"**{fc(total)}** across {len(upcoming)} charge(s) before "
-        f"{period.end:%d %b}. Set this aside before spending the rest."
-    )
+    plans = K.month_ahead(anchor, paycheck, data["recurring"], data["allocations"],
+                          cadence, today=today, checks=4)
     st.dataframe(
         pd.DataFrame({
-            "When": upcoming["Due"].dt.strftime("%a %d %b"),
-            "In": upcoming["Days Away"].map(
-                lambda d: "today" if d <= 0 else ("tomorrow" if d == 1 else f"{d} days")
-            ),
-            "What": upcoming["Name"],
-            "Amount": upcoming["Amount"].map(fc),
+            "Check": [f"{p.period.start:%d %b}" for p in plans],
+            "Of the month": [f"{p.which} of {p.of}" for p in plans],
+            "Bills": [fc(p.bills_total) for p in plans],
+            "Transfers": [fc(p.moves_total) for p in plans],
+            "Left": [fc(p.left) for p in plans],
+            "": ["⚠️ short" if p.short else ("🏠 rent" if p.is_rent_check else "") for p in plans],
         }),
         hide_index=True,
         width="stretch",
     )
+
+    short = [p for p in plans if p.short]
+    if short:
+        worst = min(short, key=lambda p: p.left)
+        st.caption(
+            f"**{len(short)} of the next {len(plans)} checks do not cover "
+            f"themselves.** The tightest is {worst.period.start:%d %b}, "
+            f"{fc(-worst.left)} short. Carrying that much forward from the "
+            "check before is what makes the month work."
+        )
+
+    trend = pd.DataFrame(
+        [{"Period": f"{p.period.start:%d %b}", "Measure": "Committed",
+          "Amount": p.committed} for p in plans]
+        + [{"Period": f"{p.period.start:%d %b}", "Measure": "Paycheck",
+            "Amount": p.paycheck} for p in plans]
+    )
+    st.altair_chart(C.trend(trend), width="stretch", theme=None)

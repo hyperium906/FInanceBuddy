@@ -5,16 +5,20 @@ retirement, brokerage, debt — and this module answers the question that opens
 every pay period: *how much of this check belongs to each, and which of those
 moves have I already made?*
 
-**Fixed rules are monthly amounts, not per-paycheck ones.** This is the single
-biggest thing the previous version got wrong. It read the $900 of rules as
-$900 *per check*, doubled it to $1,800 a month, and reported a shortfall that
-did not exist. The workbook's own Budget Sheet totals them once and subtracts
-once; a rule of $300 means $300 leaves this month, which is
-:func:`financebuddy.core.periods.per_period` of it out of each check.
+**Fixed rules are monthly amounts and they come out whole, from one check.**
+A $300 student loan payment is one $300 transfer once a month — not $138.46
+skimmed off each paycheck. Spreading it reads as tidy arithmetic and describes
+nothing anybody actually does, so a fixed rule is charged in full to the
+**first paycheck of its month** and is zero on every other check.
 
-**Percentage rules apply to the check in hand.** A tithe of 10% is 10% of what
-actually arrived, not a twelfth of a projected year. That keeps it correct in
-a three-paycheck month instead of quietly under-giving.
+That assignment is not a convention picked for neatness; it is forced by the
+money. The second check of the month is consumed by rent — $1,955.91 of bills
+against a $2,065.20 check leaves $109.29 — so the $900 of standing rules has
+nowhere to come from except the first.
+
+**Percentage rules apply to every check.** A tithe of 10% is 10% of what
+actually arrived, each time it arrives, which is both what the workbook's
+Budget Sheet computes and what keeps it right in a three-paycheck month.
 """
 
 from __future__ import annotations
@@ -47,15 +51,16 @@ class Rule:
         """``"percent"`` or ``"fixed"``."""
         return "percent" if self.rate else "fixed"
 
-    def due(self, paycheck: float, cadence: str = periods_mod.DEFAULT_CADENCE) -> float:
+    def due(self, paycheck: float, first_check: bool = True) -> float:
         """What this rule claims from one paycheck.
 
-        A percentage takes its share of the check in hand. A fixed monthly
-        amount is spread across the checks that month actually contains.
+        A percentage takes its share of the check in hand, every time. A fixed
+        monthly amount lands in full on the first check of the month and is
+        nothing on the rest — one transfer, on the check that can carry it.
         """
         if self.rate:
             return round(float(paycheck) * self.rate / 100.0, 2)
-        return round(periods_mod.per_period(self.monthly, cadence), 2)
+        return round(float(self.monthly), 2) if first_check else 0.0
 
     @property
     def monthly_cost(self) -> float:
@@ -172,16 +177,25 @@ def moves(
     paycheck: float,
     period: periods_mod.PayPeriod,
     transactions: pd.DataFrame | None = None,
+    first_check: bool = True,
 ) -> list[Move]:
-    """Every standing rule with what it claims and what has already gone."""
-    return [
-        Move(
+    """Every standing rule with what it claims and what has already gone.
+
+    Rules claiming nothing from this check — every fixed rule when this is not
+    the month's first — are dropped rather than listed at zero, so the page
+    shows what to do now instead of a column of noughts.
+    """
+    out = []
+    for rule in rules(allocations):
+        due = rule.due(paycheck, first_check)
+        if due <= 0:
+            continue
+        out.append(Move(
             rule=rule,
-            due=rule.due(paycheck, period.cadence),
+            due=due,
             moved=_moved_into(transactions, period, rule) if transactions is not None else 0.0,
-        )
-        for rule in rules(allocations)
-    ]
+        ))
+    return out
 
 
 @dataclass(frozen=True, slots=True)
@@ -227,9 +241,10 @@ def plan(
     paycheck: float,
     period: periods_mod.PayPeriod,
     transactions: pd.DataFrame | None = None,
+    first_check: bool = True,
 ) -> Plan:
     """Build the allocation plan for one pay period."""
     return Plan(
         paycheck=float(paycheck),
-        moves=moves(allocations, paycheck, period, transactions),
+        moves=moves(allocations, paycheck, period, transactions, first_check),
     )

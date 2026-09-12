@@ -54,29 +54,38 @@ def tx(date: str, description: str, category: str, amount: float,
 # --------------------------------------------------------------------------
 
 
-def test_a_fixed_rule_is_a_monthly_amount():
-    """$300 a month is $138.46 a check, not $300 and not $150."""
-    assert A.Rule("Student Loan", monthly=300.0).due(PAYCHECK) == pytest.approx(138.46)
+def test_a_fixed_rule_comes_out_whole_on_the_first_check():
+    """$300 a month is one $300 transfer, not $138.46 skimmed off each check."""
+    rule = A.Rule("Student Loan", monthly=300.0)
+    assert rule.due(PAYCHECK, first_check=True) == pytest.approx(300.0)
+    assert rule.due(PAYCHECK, first_check=False) == 0.0
 
 
-def test_the_real_rule_set_claims_what_the_workbook_says():
-    """$900/month of fixed rules, which is $415.38 out of each check."""
+def test_the_real_rule_set_totals_what_the_workbook_says():
+    """$900/month of fixed rules, charged whole to the month's first check."""
     fixed = [r for r in A.rules(REAL) if r.kind == "fixed"]
     assert sum(r.monthly for r in fixed) == pytest.approx(900.0)
-    assert sum(r.due(PAYCHECK) for r in fixed) == pytest.approx(415.38, abs=0.02)
+    assert sum(r.due(PAYCHECK, True) for r in fixed) == pytest.approx(900.0)
+    assert sum(r.due(PAYCHECK, False) for r in fixed) == 0.0
 
 
-def test_the_whole_plan_leaves_the_right_remainder():
-    p = A.plan(REAL, PAYCHECK, PERIOD)
-    assert p.due == pytest.approx(621.89, abs=0.02)
-    assert p.unallocated == pytest.approx(1443.31, abs=0.02)
+def test_the_first_check_carries_the_transfers():
+    p = A.plan(REAL, PAYCHECK, PERIOD, first_check=True)
+    assert p.due == pytest.approx(1106.52, abs=0.02)      # 900 + 10% tithe
+    assert p.unallocated == pytest.approx(958.68, abs=0.02)
 
 
-def test_the_old_doubling_bug_would_now_fail():
-    """Reading the rules per-check would claim more than half the paycheck."""
-    p = A.plan(REAL, PAYCHECK, PERIOD)
-    assert p.due < PAYCHECK / 2
-    assert p.due != pytest.approx(1106.52, abs=1.0)
+def test_the_second_check_carries_only_the_percentage():
+    """Rent takes the rest of it, so nothing fixed can come out here."""
+    p = A.plan(REAL, PAYCHECK, PERIOD, first_check=False)
+    assert p.due == pytest.approx(206.52, abs=0.02)
+    assert [m.rule.bucket for m in p.moves] == ["Tithing"]
+
+
+def test_rules_claiming_nothing_are_not_listed_at_zero():
+    """A column of noughts is not a to-do list."""
+    p = A.plan(REAL, PAYCHECK, PERIOD, first_check=False)
+    assert all(m.due > 0 for m in p.moves)
 
 
 # --------------------------------------------------------------------------
@@ -84,13 +93,16 @@ def test_the_old_doubling_bug_would_now_fail():
 # --------------------------------------------------------------------------
 
 
-def test_a_percentage_applies_to_the_check_in_hand():
-    assert A.Rule("Tithing", rate=10.0).due(PAYCHECK) == pytest.approx(206.52)
+def test_a_percentage_applies_to_every_check():
+    """A share of income, not a monthly bill - so it lands each time."""
+    rule = A.Rule("Tithing", rate=10.0)
+    assert rule.due(PAYCHECK, first_check=True) == pytest.approx(206.52)
+    assert rule.due(PAYCHECK, first_check=False) == pytest.approx(206.52)
 
 
 def test_a_percentage_scales_with_a_different_check():
     """A bigger check tithes more, automatically."""
-    assert A.Rule("Tithing", rate=10.0).due(5332.70) == pytest.approx(533.27)
+    assert A.Rule("Tithing", rate=10.0).due(5332.70, True) == pytest.approx(533.27)
 
 
 def test_percentages_are_listed_first():
@@ -131,17 +143,17 @@ def test_an_empty_sheet_is_no_rules_not_an_error():
 
 def test_a_transfer_naming_the_account_counts_as_moved():
     ledger = pd.DataFrame([
-        tx("2026-09-05", "Online Transfer to chase_savings", "Transfer", -92.31),
+        tx("2026-09-05", "Online Transfer to chase_savings", "Transfer", -200.00),
     ])
     move = next(m for m in A.moves(REAL, PAYCHECK, PERIOD, ledger)
                 if m.rule.bucket == "Chase Savings")
-    assert move.moved == pytest.approx(92.31)
+    assert move.moved == pytest.approx(200.00)
     assert move.done
 
 
 def test_an_unmatched_transfer_leaves_the_move_outstanding():
     """Shown-as-outstanding gets checked; shown-as-done does not."""
-    ledger = pd.DataFrame([tx("2026-09-05", "Online Transfer to somewhere", "Transfer", -92.31)])
+    ledger = pd.DataFrame([tx("2026-09-05", "Online Transfer to somewhere", "Transfer", -200.00)])
     move = next(m for m in A.moves(REAL, PAYCHECK, PERIOD, ledger)
                 if m.rule.bucket == "Chase Savings")
     assert move.moved == 0.0
@@ -158,7 +170,7 @@ def test_only_movement_categories_count_as_a_move():
 
 def test_a_move_outside_the_period_does_not_count():
     ledger = pd.DataFrame([
-        tx("2026-09-02", "Online Transfer to chase_savings", "Transfer", -92.31),
+        tx("2026-09-02", "Online Transfer to chase_savings", "Transfer", -200.00),
     ])
     move = next(m for m in A.moves(REAL, PAYCHECK, PERIOD, ledger)
                 if m.rule.bucket == "Chase Savings")
@@ -168,33 +180,33 @@ def test_a_move_outside_the_period_does_not_count():
 def test_the_matching_credit_is_not_counted_twice():
     """The same dollar arriving in the other account is not a second move."""
     ledger = pd.DataFrame([
-        tx("2026-09-05", "Online Transfer to chase_savings", "Transfer", -92.31),
-        tx("2026-09-05", "Online Transfer from chk", "Transfer", 92.31, account="chase_savings"),
+        tx("2026-09-05", "Online Transfer to chase_savings", "Transfer", -200.00),
+        tx("2026-09-05", "Online Transfer from chk", "Transfer", 200.00, account="chase_savings"),
     ])
     move = next(m for m in A.moves(REAL, PAYCHECK, PERIOD, ledger)
                 if m.rule.bucket == "Chase Savings")
-    assert move.moved == pytest.approx(92.31)
+    assert move.moved == pytest.approx(200.00)
 
 
 def test_moving_extra_is_not_a_debt_and_is_reported():
-    move = A.Move(A.Rule("Savings", monthly=200.0), due=92.31, moved=150.0)
+    move = A.Move(A.Rule("Savings", monthly=200.0), due=200.0, moved=250.0)
     assert move.outstanding == 0.0
     assert move.done
-    assert move.overshot == pytest.approx(57.69)
+    assert move.overshot == pytest.approx(50.0)
 
 
 def test_the_plan_totals_what_is_left_to_do():
     ledger = pd.DataFrame([
-        tx("2026-09-05", "Online Transfer to chase_savings", "Transfer", -92.31),
+        tx("2026-09-05", "Online Transfer to chase_savings", "Transfer", -200.00),
     ])
     p = A.plan(REAL, PAYCHECK, PERIOD, ledger)
-    assert p.moved == pytest.approx(92.31)
-    assert p.outstanding == pytest.approx(p.due - 92.31)
+    assert p.moved == pytest.approx(200.00)
+    assert p.outstanding == pytest.approx(p.due - 200.00)
     assert not p.complete
 
 
 def test_a_plan_with_everything_moved_is_complete():
-    p = A.Plan(PAYCHECK, [A.Move(A.Rule("Savings", monthly=200.0), due=92.31, moved=92.31)])
+    p = A.Plan(PAYCHECK, [A.Move(A.Rule("Savings", monthly=200.0), due=200.0, moved=200.0)])
     assert p.complete
     assert p.outstanding == 0.0
 
@@ -202,4 +214,4 @@ def test_a_plan_with_everything_moved_is_complete():
 def test_rules_claiming_more_than_the_check_go_negative():
     """A plan that cannot be funded is a fact the page must be able to state."""
     greedy = sheet(rule("Everything", 10000.0))
-    assert A.plan(greedy, PAYCHECK, PERIOD).unallocated < 0
+    assert A.plan(greedy, PAYCHECK, PERIOD, first_check=True).unallocated < 0
