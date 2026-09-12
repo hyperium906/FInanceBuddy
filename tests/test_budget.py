@@ -363,3 +363,62 @@ class TestUpcomingBillsCountsWhatActuallyBills:
         assert B.safe_to_spend(
             accounts, stale, empty_frame, goals, allocations, config, today=TODAY
         ) == pytest.approx(13300.0 - 250.0)
+
+
+class TestMovementsAreNotSpending:
+    """Moving your own money is neither income nor spending.
+
+    Left in, a transfer is counted twice over — as money spent leaving the
+    checking account and as money earned arriving in savings — and because
+    moving savings around dwarfs buying lunch, it becomes the largest line on
+    the page and buries everything the page exists to show.
+    """
+
+    @staticmethod
+    def _ledger() -> pd.DataFrame:
+        return pd.DataFrame([
+            {"Transaction ID": "s1", "Date": pd.Timestamp("2026-09-02"),
+             "Account ID": "chk", "Description": "Groceries", "Category": "Groceries",
+             "Amount": -120.00, "Notes": ""},
+            {"Transaction ID": "s2", "Date": pd.Timestamp("2026-09-03"),
+             "Account ID": "chk", "Description": "Salary", "Category": "Income",
+             "Amount": 2065.20, "Notes": ""},
+            {"Transaction ID": "s3", "Date": pd.Timestamp("2026-09-04"),
+             "Account ID": "chk", "Description": "Online Transfer to SAV",
+             "Category": "Transfer", "Amount": -1500.00, "Notes": ""},
+            {"Transaction ID": "s4", "Date": pd.Timestamp("2026-09-05"),
+             "Account ID": "sav", "Description": "Online Transfer from CHK",
+             "Category": "Transfer", "Amount": 1500.00, "Notes": ""},
+        ])
+
+    def test_a_transfer_out_is_not_spending(self):
+        spend = B.spending_by_category(self._ledger(), "2026-09")
+        assert dict(zip(spend["Category"], spend["Actual"])) == {"Groceries": 120.0}
+
+    def test_a_transfer_in_is_not_income(self):
+        row = B.income_vs_spending(
+            self._ledger(), months=1, today=pd.Timestamp("2026-09-09")
+        ).iloc[0]
+        assert row["Income"] == pytest.approx(2065.20)
+        assert row["Spending"] == pytest.approx(120.0)
+
+    def test_the_transfer_would_otherwise_dominate(self):
+        """Without the exclusion this reads as $1,620 spent on a $120 month."""
+        mislabelled = self._ledger().copy()
+        mislabelled.loc[mislabelled["Category"] == "Transfer", "Category"] = "Other"
+        spend = B.spending_by_category(mislabelled, "2026-09")
+        assert spend["Actual"].sum() == pytest.approx(1620.0)
+
+    def test_savings_counts_as_a_movement_too(self):
+        ledger = self._ledger()
+        ledger.loc[ledger["Category"] == "Transfer", "Category"] = "Savings"
+        assert B.spending_by_category(ledger, "2026-09")["Actual"].sum() == 120.0
+
+    def test_a_real_category_is_untouched(self):
+        """The exclusion is exactly two names, not a general amnesty."""
+        ledger = self._ledger()
+        ledger.loc[ledger["Category"] == "Transfer", "Category"] = "Debt"
+        spend = B.spending_by_category(ledger, "2026-09")
+        assert dict(zip(spend["Category"], spend["Actual"])) == {
+            "Debt": 1500.0, "Groceries": 120.0
+        }

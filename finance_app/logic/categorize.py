@@ -31,17 +31,29 @@ from finance_app.llm import LLMError, generate
 log = logging.getLogger(__name__)
 
 #: The closed set of categories. The model may return nothing outside this list.
+#: The category vocabulary, which is the workbook's rather than this module's.
+#: `_Budgets`, `_Recurring`, and the formula-driven `Budget Sheet` report all
+#: key off these exact strings, so the list follows the sheet — a name the
+#: categorizer emits that no budget row uses is spending that silently lands
+#: in an unbudgeted category, which is the failure this ordering prevents.
 CATEGORIES: tuple[str, ...] = (
     "Groceries",
     "Dining",
-    "Gas",
+    "Gas / Transportation",
     "Utilities",
-    "Rent",
+    "Housing",
     "Subscriptions",
+    "Giving",
     "Shopping",
     "Health",
-    "Transport",
+    "Debt",
     "Income",
+    # Moving money between your own accounts. The Budget page already writes
+    # allocation rows under this name and affordability.py already excludes it
+    # from discretionary spending — it was simply missing from the vocabulary
+    # the categorizer may choose from, so an imported transfer had nowhere to
+    # go and landed in Other, where it read as money spent.
+    "Transfer",
     "Other",
 )
 

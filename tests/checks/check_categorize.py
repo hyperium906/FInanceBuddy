@@ -50,9 +50,9 @@ print("  merchant text kept, masked numbers removed")
 
 print("\n=== rule patterns match whole tokens only ===")
 rr = C.load_rules()
-for raw, want in [("PARENT TEACHER ASSOC", None), ("MONTHLY RENT PAYMENT", "Rent"),
-                  ("BPOST INTERNATIONAL", None), ("BP STATION 4411", "Gas"),
-                  ("METROPOLITAN MUSEUM", None), ("METRO TRANSIT", "Transport"),
+for raw, want in [("PARENT TEACHER ASSOC", None), ("MONTHLY RENT PAYMENT", "Housing"),
+                  ("BPOST INTERNATIONAL", None), ("BP STATION 4411", "Gas / Transportation"),
+                  ("METROPOLITAN MUSEUM", None), ("METRO TRANSIT", "Gas / Transportation"),
                   ("APPLE.COM/BILL", "Subscriptions")]:
     got = C.apply_rules(C.scrub_merchant(raw), rr)
     print(f"  {raw:24} -> {got}")
@@ -72,19 +72,19 @@ for raw, want in [
     ("POS DEBIT TRADER JOE'S #417 XXXXXX4412 SAN JOSE CA", "Groceries"),
     ("ACH PMT COMCAST CABLE REF#8837261923", "Utilities"),
     ("PAYPAL *NETFLIX.COM 4029357733", "Subscriptions"),
-    ("VISA DDA PUR CHEVRON 0093312", "Gas"),
+    ("VISA DDA PUR CHEVRON 0093312", "Gas / Transportation"),
     ("DIRECT DEP ACME CORP PAYROLL", "Income"),
-    ("UBER TRIP HELP.UBER.COM", "Transport"),
+    ("UBER TRIP HELP.UBER.COM", "Gas / Transportation"),
 ]:
     got = C.apply_rules(C.scrub_merchant(raw), rules)
     print(f"  {C.scrub_merchant(raw)[:34]:34} -> {got}")
     assert got == want, (raw, got, want)
 
 print("\n=== longest-match-wins ===")
-rs = [C.Rule("uber", "Transport"), C.Rule("uber eats", "Dining")]
+rs = [C.Rule("uber", "Gas / Transportation"), C.Rule("uber eats", "Dining")]
 rs.sort(key=lambda r: len(r.match), reverse=True)
 assert C.apply_rules("uber eats order", rs) == "Dining"
-assert C.apply_rules("uber trip", rs) == "Transport"
+assert C.apply_rules("uber trip", rs) == "Gas / Transportation"
 print("  'uber eats' -> Dining, 'uber trip' -> Transport")
 
 print("\n=== tier 2: batching + payload privacy ===")

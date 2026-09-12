@@ -1,110 +1,474 @@
 {
   "version": 1,
-  "comment": "Merchant substring -> category. Matched case-insensitively against the scrubbed merchant name; the longest matching pattern wins. Edit freely — the app appends learned rules here when you recategorize a transaction by hand.",
+  "comment": "Merchant substring -> category. Matched case-insensitively against the scrubbed merchant name; the longest matching pattern wins. Edit freely \u2014 the app appends learned rules here when you recategorize a transaction by hand.",
   "rules": [
-    {"match": "trader joe", "category": "Groceries"},
-    {"match": "whole foods", "category": "Groceries"},
-    {"match": "safeway", "category": "Groceries"},
-    {"match": "kroger", "category": "Groceries"},
-    {"match": "aldi", "category": "Groceries"},
-    {"match": "costco", "category": "Groceries"},
-    {"match": "publix", "category": "Groceries"},
-    {"match": "wegmans", "category": "Groceries"},
-    {"match": "sprouts", "category": "Groceries"},
-    {"match": "h-e-b", "category": "Groceries"},
-
-    {"match": "starbucks", "category": "Dining"},
-    {"match": "chipotle", "category": "Dining"},
-    {"match": "mcdonald", "category": "Dining"},
-    {"match": "doordash", "category": "Dining"},
-    {"match": "uber eats", "category": "Dining"},
-    {"match": "grubhub", "category": "Dining"},
-    {"match": "panera", "category": "Dining"},
-    {"match": "dunkin", "category": "Dining"},
-    {"match": "pizza", "category": "Dining"},
-    {"match": "restaurant", "category": "Dining"},
-    {"match": "cafe", "category": "Dining"},
-    {"match": "coffee", "category": "Dining"},
-
-    {"match": "shell", "category": "Gas"},
-    {"match": "chevron", "category": "Gas"},
-    {"match": "exxon", "category": "Gas"},
-    {"match": "mobil", "category": "Gas"},
-    {"match": "bp", "category": "Gas"},
-    {"match": "texaco", "category": "Gas"},
-    {"match": "76 station", "category": "Gas"},
-    {"match": "arco", "category": "Gas"},
-    {"match": "circle k", "category": "Gas"},
-
-    {"match": "pg&e", "category": "Utilities"},
-    {"match": "pacific gas", "category": "Utilities"},
-    {"match": "comcast", "category": "Utilities"},
-    {"match": "xfinity", "category": "Utilities"},
-    {"match": "verizon", "category": "Utilities"},
-    {"match": "at&t", "category": "Utilities"},
-    {"match": "t-mobile", "category": "Utilities"},
-    {"match": "water district", "category": "Utilities"},
-    {"match": "electric", "category": "Utilities"},
-    {"match": "waste management", "category": "Utilities"},
-
-    {"match": "rent", "category": "Rent"},
-    {"match": "landlord", "category": "Rent"},
-    {"match": "property mgmt", "category": "Rent"},
-    {"match": "apartments", "category": "Rent"},
-    {"match": "mortgage", "category": "Rent"},
-
-    {"match": "netflix", "category": "Subscriptions"},
-    {"match": "spotify", "category": "Subscriptions"},
-    {"match": "hulu", "category": "Subscriptions"},
-    {"match": "disney plus", "category": "Subscriptions"},
-    {"match": "youtube premium", "category": "Subscriptions"},
-    {"match": "apple.com", "category": "Subscriptions"},
-    {"match": "google storage", "category": "Subscriptions"},
-    {"match": "adobe", "category": "Subscriptions"},
-    {"match": "patreon", "category": "Subscriptions"},
-    {"match": "openai", "category": "Subscriptions"},
-    {"match": "github", "category": "Subscriptions"},
-
-    {"match": "amazon", "category": "Shopping"},
-    {"match": "target", "category": "Shopping"},
-    {"match": "walmart", "category": "Shopping"},
-    {"match": "best buy", "category": "Shopping"},
-    {"match": "ikea", "category": "Shopping"},
-    {"match": "etsy", "category": "Shopping"},
-    {"match": "ebay", "category": "Shopping"},
-    {"match": "home depot", "category": "Shopping"},
-    {"match": "lowe's", "category": "Shopping"},
-    {"match": "nordstrom", "category": "Shopping"},
-
-    {"match": "cvs", "category": "Health"},
-    {"match": "walgreens", "category": "Health"},
-    {"match": "rite aid", "category": "Health"},
-    {"match": "pharmacy", "category": "Health"},
-    {"match": "dental", "category": "Health"},
-    {"match": "medical", "category": "Health"},
-    {"match": "clinic", "category": "Health"},
-    {"match": "hospital", "category": "Health"},
-    {"match": "vision", "category": "Health"},
-    {"match": "blue shield", "category": "Health"},
-
-    {"match": "uber", "category": "Transport"},
-    {"match": "lyft", "category": "Transport"},
-    {"match": "bart", "category": "Transport"},
-    {"match": "metro", "category": "Transport"},
-    {"match": "transit", "category": "Transport"},
-    {"match": "parking", "category": "Transport"},
-    {"match": "toll", "category": "Transport"},
-    {"match": "amtrak", "category": "Transport"},
-    {"match": "united airlines", "category": "Transport"},
-    {"match": "delta air", "category": "Transport"},
-
-    {"match": "payroll", "category": "Income"},
-    {"match": "direct dep", "category": "Income"},
-    {"match": "salary", "category": "Income"},
-    {"match": "interest paid", "category": "Income"},
-    {"match": "dividend", "category": "Income"},
-    {"match": "refund", "category": "Income"},
-    {"match": "reimbursement", "category": "Income"},
-    {"match": "venmo cashout", "category": "Income"}
+    {
+      "match": "trader joe",
+      "category": "Groceries"
+    },
+    {
+      "match": "whole foods",
+      "category": "Groceries"
+    },
+    {
+      "match": "safeway",
+      "category": "Groceries"
+    },
+    {
+      "match": "kroger",
+      "category": "Groceries"
+    },
+    {
+      "match": "aldi",
+      "category": "Groceries"
+    },
+    {
+      "match": "costco",
+      "category": "Groceries"
+    },
+    {
+      "match": "publix",
+      "category": "Groceries"
+    },
+    {
+      "match": "wegmans",
+      "category": "Groceries"
+    },
+    {
+      "match": "sprouts",
+      "category": "Groceries"
+    },
+    {
+      "match": "h-e-b",
+      "category": "Groceries"
+    },
+    {
+      "match": "starbucks",
+      "category": "Dining"
+    },
+    {
+      "match": "chipotle",
+      "category": "Dining"
+    },
+    {
+      "match": "mcdonald",
+      "category": "Dining"
+    },
+    {
+      "match": "doordash",
+      "category": "Dining"
+    },
+    {
+      "match": "uber eats",
+      "category": "Dining"
+    },
+    {
+      "match": "grubhub",
+      "category": "Dining"
+    },
+    {
+      "match": "panera",
+      "category": "Dining"
+    },
+    {
+      "match": "dunkin",
+      "category": "Dining"
+    },
+    {
+      "match": "pizza",
+      "category": "Dining"
+    },
+    {
+      "match": "restaurant",
+      "category": "Dining"
+    },
+    {
+      "match": "cafe",
+      "category": "Dining"
+    },
+    {
+      "match": "coffee",
+      "category": "Dining"
+    },
+    {
+      "match": "shell",
+      "category": "Gas / Transportation"
+    },
+    {
+      "match": "chevron",
+      "category": "Gas / Transportation"
+    },
+    {
+      "match": "exxon",
+      "category": "Gas / Transportation"
+    },
+    {
+      "match": "mobil",
+      "category": "Gas / Transportation"
+    },
+    {
+      "match": "bp",
+      "category": "Gas / Transportation"
+    },
+    {
+      "match": "texaco",
+      "category": "Gas / Transportation"
+    },
+    {
+      "match": "76 station",
+      "category": "Gas / Transportation"
+    },
+    {
+      "match": "arco",
+      "category": "Gas / Transportation"
+    },
+    {
+      "match": "circle k",
+      "category": "Gas / Transportation"
+    },
+    {
+      "match": "pg&e",
+      "category": "Utilities"
+    },
+    {
+      "match": "pacific gas",
+      "category": "Utilities"
+    },
+    {
+      "match": "comcast",
+      "category": "Utilities"
+    },
+    {
+      "match": "xfinity",
+      "category": "Utilities"
+    },
+    {
+      "match": "verizon",
+      "category": "Utilities"
+    },
+    {
+      "match": "at&t",
+      "category": "Utilities"
+    },
+    {
+      "match": "t-mobile",
+      "category": "Utilities"
+    },
+    {
+      "match": "water district",
+      "category": "Utilities"
+    },
+    {
+      "match": "electric",
+      "category": "Utilities"
+    },
+    {
+      "match": "waste management",
+      "category": "Utilities"
+    },
+    {
+      "match": "rent",
+      "category": "Housing"
+    },
+    {
+      "match": "landlord",
+      "category": "Housing"
+    },
+    {
+      "match": "property mgmt",
+      "category": "Housing"
+    },
+    {
+      "match": "apartments",
+      "category": "Housing"
+    },
+    {
+      "match": "mortgage",
+      "category": "Housing"
+    },
+    {
+      "match": "netflix",
+      "category": "Subscriptions"
+    },
+    {
+      "match": "spotify",
+      "category": "Subscriptions"
+    },
+    {
+      "match": "hulu",
+      "category": "Subscriptions"
+    },
+    {
+      "match": "disney plus",
+      "category": "Subscriptions"
+    },
+    {
+      "match": "youtube premium",
+      "category": "Subscriptions"
+    },
+    {
+      "match": "apple.com",
+      "category": "Subscriptions"
+    },
+    {
+      "match": "google storage",
+      "category": "Subscriptions"
+    },
+    {
+      "match": "adobe",
+      "category": "Subscriptions"
+    },
+    {
+      "match": "patreon",
+      "category": "Subscriptions"
+    },
+    {
+      "match": "openai",
+      "category": "Subscriptions"
+    },
+    {
+      "match": "github",
+      "category": "Subscriptions"
+    },
+    {
+      "match": "amazon",
+      "category": "Shopping"
+    },
+    {
+      "match": "target",
+      "category": "Shopping"
+    },
+    {
+      "match": "walmart",
+      "category": "Shopping"
+    },
+    {
+      "match": "best buy",
+      "category": "Shopping"
+    },
+    {
+      "match": "ikea",
+      "category": "Shopping"
+    },
+    {
+      "match": "etsy",
+      "category": "Shopping"
+    },
+    {
+      "match": "ebay",
+      "category": "Shopping"
+    },
+    {
+      "match": "home depot",
+      "category": "Shopping"
+    },
+    {
+      "match": "lowe's",
+      "category": "Shopping"
+    },
+    {
+      "match": "nordstrom",
+      "category": "Shopping"
+    },
+    {
+      "match": "cvs",
+      "category": "Health"
+    },
+    {
+      "match": "walgreens",
+      "category": "Health"
+    },
+    {
+      "match": "rite aid",
+      "category": "Health"
+    },
+    {
+      "match": "pharmacy",
+      "category": "Health"
+    },
+    {
+      "match": "dental",
+      "category": "Health"
+    },
+    {
+      "match": "medical",
+      "category": "Health"
+    },
+    {
+      "match": "clinic",
+      "category": "Health"
+    },
+    {
+      "match": "hospital",
+      "category": "Health"
+    },
+    {
+      "match": "vision",
+      "category": "Health"
+    },
+    {
+      "match": "blue shield",
+      "category": "Health"
+    },
+    {
+      "match": "uber",
+      "category": "Gas / Transportation"
+    },
+    {
+      "match": "lyft",
+      "category": "Gas / Transportation"
+    },
+    {
+      "match": "bart",
+      "category": "Gas / Transportation"
+    },
+    {
+      "match": "metro",
+      "category": "Gas / Transportation"
+    },
+    {
+      "match": "transit",
+      "category": "Gas / Transportation"
+    },
+    {
+      "match": "parking",
+      "category": "Gas / Transportation"
+    },
+    {
+      "match": "toll",
+      "category": "Gas / Transportation"
+    },
+    {
+      "match": "amtrak",
+      "category": "Gas / Transportation"
+    },
+    {
+      "match": "united airlines",
+      "category": "Gas / Transportation"
+    },
+    {
+      "match": "delta air",
+      "category": "Gas / Transportation"
+    },
+    {
+      "match": "payroll",
+      "category": "Income"
+    },
+    {
+      "match": "direct dep",
+      "category": "Income"
+    },
+    {
+      "match": "salary",
+      "category": "Income"
+    },
+    {
+      "match": "interest paid",
+      "category": "Income"
+    },
+    {
+      "match": "dividend",
+      "category": "Income"
+    },
+    {
+      "match": "refund",
+      "category": "Income"
+    },
+    {
+      "match": "reimbursement",
+      "category": "Income"
+    },
+    {
+      "match": "venmo cashout",
+      "category": "Income"
+    },
+    {
+      "match": "tithe",
+      "category": "Giving"
+    },
+    {
+      "match": "tithing",
+      "category": "Giving"
+    },
+    {
+      "match": "church",
+      "category": "Giving"
+    },
+    {
+      "match": "offering",
+      "category": "Giving"
+    },
+    {
+      "match": "ministries",
+      "category": "Giving"
+    },
+    {
+      "match": "donation",
+      "category": "Giving"
+    },
+    {
+      "match": "online transfer",
+      "category": "Transfer"
+    },
+    {
+      "match": "transfer to",
+      "category": "Transfer"
+    },
+    {
+      "match": "transfer from",
+      "category": "Transfer"
+    },
+    {
+      "match": "moneyline",
+      "category": "Transfer"
+    },
+    {
+      "match": "fid bkg svc",
+      "category": "Transfer"
+    },
+    {
+      "match": "public.com",
+      "category": "Transfer"
+    },
+    {
+      "match": "alpaca",
+      "category": "Transfer"
+    },
+    {
+      "match": "coinbase",
+      "category": "Transfer"
+    },
+    {
+      "match": "student ln",
+      "category": "Debt"
+    },
+    {
+      "match": "student loan",
+      "category": "Debt"
+    },
+    {
+      "match": "dept education",
+      "category": "Debt"
+    },
+    {
+      "match": "sallie mae",
+      "category": "Debt"
+    },
+    {
+      "match": "nelnet",
+      "category": "Debt"
+    },
+    {
+      "match": "amazon prime",
+      "category": "Subscriptions"
+    },
+    {
+      "match": "coca cola",
+      "category": "Dining"
+    },
+    {
+      "match": "hope church",
+      "category": "Giving"
+    }
   ]
 }

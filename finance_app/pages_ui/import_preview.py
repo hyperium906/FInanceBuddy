@@ -45,7 +45,7 @@ def render() -> None:
         return
 
     try:
-        raw = pd.read_csv(upload, dtype=str).fillna("")
+        raw = read_bank_csv(upload)
     except Exception as exc:  # noqa: BLE001 - any parse failure is user-facing
         st.error(f"Could not read that CSV: {exc}")
         return
@@ -67,6 +67,38 @@ def render() -> None:
         return
 
     _render_preview()
+
+
+def read_bank_csv(source) -> pd.DataFrame:
+    """Read a bank CSV export into strings, tolerating their formatting quirks.
+
+    ``index_col=False`` is the whole point of this function. Several banks —
+    Chase among them — end every data row with a trailing comma, giving each
+    row one more field than the header row has names. Pandas resolves that by
+    silently promoting the first column to the index, which shifts every
+    remaining value one column to the left: the date column fills with
+    descriptions and the amount column with transaction types. Nothing raises,
+    the preview looks plausibly populated, and the import writes nonsense to
+    the sheet. Forcing a range index makes the extra field an unnamed trailing
+    column instead, which the mapping selectboxes simply ignore.
+
+    Blank leading lines are skipped for the same reason: an export that opens
+    with a title row would otherwise be read as a one-column file.
+    """
+    frame = pd.read_csv(
+        source,
+        dtype=str,
+        index_col=False,
+        skip_blank_lines=True,
+    ).fillna("")
+    # A trailing comma leaves an unnamed, entirely empty column. It is not a
+    # column of the export, and offering it in the mapping is just noise.
+    empty = [
+        name
+        for name in frame.columns
+        if str(name).startswith("Unnamed:") and not frame[name].str.strip().any()
+    ]
+    return frame.drop(columns=empty)
 
 
 def _column_mapping(raw: pd.DataFrame) -> dict[str, str] | None:

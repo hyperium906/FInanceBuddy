@@ -406,7 +406,7 @@ def _discretionary_spent(
     )
 
     fixed = _recurring_categories(recurring)
-    excluded = fixed | {"transfer", "income", "savings"}
+    excluded = fixed | B.MOVEMENT_CATEGORIES | {"income"}
     rows = (when >= start) & (when <= end) & (amounts < 0) & (~categories.isin(excluded))
     return float(-amounts[rows].sum())
 

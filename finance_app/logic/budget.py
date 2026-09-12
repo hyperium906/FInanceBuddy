@@ -34,6 +34,16 @@ STALE_AFTER_DAYS = 7
 #: _Config key that pins the monthly savings target.
 SAVINGS_TARGET_KEY = "monthly_savings_target"
 
+#: Categories that move money rather than earn or spend it, lower-cased.
+#:
+#: A transfer between your own accounts leaves one balance and arrives in
+#: another; nothing was earned and nothing was consumed. Counting it makes a
+#: dashboard report a month that never happened — money "spent" on the way out
+#: and "earned" on the way back in — and it is usually the largest line on the
+#: page, because moving savings around dwarfs buying lunch. The Budget page
+#: already writes its allocation rows under ``Transfer`` for this reason.
+MOVEMENT_CATEGORIES: frozenset[str] = frozenset({"transfer", "savings"})
+
 
 # --------------------------------------------------------------------------
 # Small shared helpers
@@ -464,7 +474,8 @@ def spending_by_category(
     """Money spent per category in ``month``, as positive amounts.
 
     Only outgoing amounts count; income and refunds are excluded so a refund
-    cannot mask overspending in a category.
+    cannot mask overspending in a category. Movements between your own
+    accounts are excluded too — see :data:`MOVEMENT_CATEGORIES`.
     """
     columns = ["Category", "Actual"]
     if transactions is None or transactions.empty:
@@ -474,7 +485,8 @@ def spending_by_category(
     start, end = month_bounds(target)
     when = _dates(transactions, "Date")
     amounts = _num(transactions, "Amount")
-    rows = transactions[(when >= start) & (when <= end) & (amounts < 0)]
+    moved = _text(transactions, "Category").isin(MOVEMENT_CATEGORIES)
+    rows = transactions[(when >= start) & (when <= end) & (amounts < 0) & (~moved)]
     if rows.empty:
         return pd.DataFrame(columns=columns)
 
@@ -574,7 +586,10 @@ def income_vs_spending(
     when = _dates(transactions, "Date")
     amounts = _num(transactions, "Amount")
     keys = when.dt.strftime("%Y-%m")
-    valid = when.notna() & keys.isin(window)
+    # Both sides drop movements: a transfer in is not income, and the transfer
+    # out that funded it is not spending. Leaving them in reports both.
+    moved = _text(transactions, "Category").isin(MOVEMENT_CATEGORIES)
+    valid = when.notna() & keys.isin(window) & (~moved)
     if not valid.any():
         return frame
 
