@@ -24,4 +24,30 @@ gatherUsageStats = false
 showErrorDetails = "none"
 
 [theme]
-base = "light"
+# Dark by default. Both palettes below are defined, so the hamburger menu ->
+# Settings -> Appearance can switch to light and the choice sticks per browser;
+# `base` only decides what a viewer sees before they express a preference.
+#
+# Options set here apply to BOTH themes -- [theme.light] and [theme.dark]
+# extend this table rather than replacing it -- so anything that should not
+# change with the theme belongs here and nowhere else.
+base = "dark"
+
+# The teal the app already uses for "on track" in the dashboard, goals, and
+# the buy advisor. Reusing it means the accent and the status colours are one
+# palette rather than two that happen to sit next to each other.
+primaryColor = "#2a9d8f"
+
+[theme.light]
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f3f5f7"
+textColor = "#16191d"
+borderColor = "#dfe3e8"
+
+[theme.dark]
+# Not pure black: a slightly blue-grey ground keeps the white text from
+# haloing, and gives the cards a step to sit on without adding a border.
+backgroundColor = "#11151a"
+secondaryBackgroundColor = "#1a2029"
+textColor = "#e3e6ea"
+borderColor = "#2b333f"

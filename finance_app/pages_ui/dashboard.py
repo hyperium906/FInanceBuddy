@@ -22,6 +22,12 @@ STATUS_COLORS = {
     "none": "#9aa0a6",
 }
 
+#: The unfilled part of a progress bar. A neutral grey at low alpha rather than
+#: a fixed hex: it darkens against the light theme and lightens against the
+#: dark one, so one value is correct in both. The status colours above are
+#: mid-tone enough to need no such treatment.
+_TRACK = "rgba(128,128,128,.25)"
+
 STATUS_LABELS = {
     "red": "Over budget",
     "amber": "Past 80%",
@@ -342,14 +348,16 @@ def _budget_bars(budget_table: pd.DataFrame, month: str) -> None:
             figures.markdown(f"{B.format_currency(actual)} · no budget set")
 
         # The bar is actual spend; the notch is where the budget sits.
+        # currentColor, not a literal: the notch has to read against whichever
+        # theme is active, and inheriting the text colour tracks it for free.
         notch = (
             f'<div style="position:absolute;left:{marker:.2f}%;top:-2px;bottom:-2px;'
-            f'width:2px;background:#333;opacity:.65;"></div>'
+            f'width:2px;background:currentColor;opacity:.65;"></div>'
             if marker is not None and marker <= 100
             else ""
         )
         st.markdown(
-            f'<div style="position:relative;height:14px;background:#e9ecef;'
+            f'<div style="position:relative;height:14px;background:{_TRACK};'
             f'border-radius:7px;margin:-6px 0 12px 0;overflow:visible;">'
             f'<div style="width:{share * 100:.2f}%;height:100%;background:{color};'
             f'border-radius:7px;"></div>{notch}</div>',

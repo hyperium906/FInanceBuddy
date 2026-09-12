@@ -27,6 +27,12 @@ STATUS_COLORS = {
     "none": "#9aa0a6",
 }
 
+#: The unfilled part of a progress bar. A neutral grey at low alpha rather than
+#: a fixed hex: it darkens against the light theme and lightens against the
+#: dark one, so one value is correct in both. The status colours above are
+#: mid-tone enough to need no such treatment.
+_TRACK = "rgba(128,128,128,.25)"
+
 
 def render() -> None:
     """Draw the goals page."""
@@ -164,7 +170,7 @@ def _bar(share: float, color: str) -> str:
     """A progress bar as inline HTML, so its colour can carry the verdict."""
     width = max(0.0, min(share, 1.0)) * 100
     return (
-        '<div style="background:#e9ecef;border-radius:4px;height:14px;width:100%">'
+        f'<div style="background:{_TRACK};border-radius:4px;height:14px;width:100%">'
         f'<div style="background:{color};width:{width:.1f}%;height:14px;'
         'border-radius:4px"></div></div>'
     )
