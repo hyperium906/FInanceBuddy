@@ -89,6 +89,9 @@ class Observation:
     sheet_day: int | None
     sheet_amount: float
     estimated: bool = False
+    #: You have said this recurs. Beats the sighting count, which on a short
+    #: statement cannot prove a monthly cycle either way.
+    asserted: bool = False
     charges: list[tuple[pd.Timestamp, float]] = field(default_factory=list)
     #: Charges from the same merchant that do not match the stated amount.
     #: Kept so "39 Amazon charges but none near $14.99" can be said, which is
@@ -140,9 +143,11 @@ class Observation:
 
         With only a few weeks of statement a genuinely monthly bill can only
         have been seen once, so this is a statement about the strength of the
-        evidence rather than a verdict on the subscription.
+        evidence rather than a verdict on the subscription — and it is
+        overridden outright by the user saying so, because on this much
+        history they know and the data does not.
         """
-        return self.months_seen >= 2
+        return self.asserted or self.months_seen >= 2
 
     @property
     def last_seen(self) -> pd.Timestamp | None:
@@ -211,7 +216,12 @@ class Observation:
         if not self.proven:
             return (
                 f"seen once, on the {ordinal(self.observed_day)}{drift} — one "
-                "charge is not proof it recurs; it may have been a one-off"
+                "charge is not proof it recurs; confirm it if you know it does"
+            )
+        if self.asserted and self.months_seen < 2:
+            return (
+                f"you have confirmed this recurs; charged on the "
+                f"{ordinal(self.observed_day)}{drift}"
             )
         return f"charged {times}, on the {ordinal(self.observed_day)}{drift or ' — matches'}"
 
@@ -290,6 +300,7 @@ def observe(
         out.append(Observation(
             name=name, sheet_day=sheet_day, sheet_amount=sheet_amount,
             estimated=bool(row.get("Estimated", False)),
+            asserted=bool(row.get("Confirmed", False)),
             charges=_one_per_month(near), off_amount=off,
         ))
     return out

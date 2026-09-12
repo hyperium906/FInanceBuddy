@@ -133,6 +133,11 @@ class RecurringExpense:
         # seen this", and without the distinction a correct estimate looks
         # like a mistake every time the page is opened.
         Column("Estimated", "estimated", BOOL, ("estimated",), optional=True),
+        # You saying this recurs. A few weeks of statement cannot demonstrate
+        # a monthly cycle — most bills can only have been seen once — so the
+        # app would otherwise go on questioning a subscription you already
+        # know you have. Your knowledge beats thin evidence; this records it.
+        Column("Confirmed", "confirmed", BOOL, ("confirmed",), optional=True),
     )
 
     recurring_id: str
@@ -145,6 +150,7 @@ class RecurringExpense:
     active: bool = True
     merchant: str = ""
     estimated: bool = False
+    confirmed_recurring: bool = False
 
 
 @dataclass(frozen=True, slots=True)

@@ -234,7 +234,7 @@ def test_a_single_charge_is_not_proof_of_a_subscription():
     )["Uppbeat"]
     assert seen.confirmed          # the charge happened
     assert not seen.proven         # but nothing shows it recurs
-    assert "one-off" in seen.note
+    assert "not proof it recurs" in seen.note
 
 
 def test_two_charges_in_different_months_prove_it():
@@ -256,3 +256,33 @@ def test_two_charges_in_the_same_month_do_not_prove_it():
     )["Shop"]
     assert seen.months_seen == 1
     assert not seen.proven
+
+
+def test_the_user_saying_so_beats_a_thin_statement():
+    """A few weeks cannot demonstrate a monthly cycle; the user knows anyway."""
+    row = item("Amazon", 14.99, 24, "amazon prime")
+    row["Confirmed"] = True
+    seen = observe([row], [charge("2026-08-24", "AMAZON PRIME*4K2 AMZN.COM/BILL", 8.01)])["Amazon"]
+    assert seen.months_seen == 1
+    assert seen.proven
+    assert "confirmed this recurs" in seen.note
+    assert "one-off" not in seen.note
+
+
+def test_confirmation_does_not_invent_a_charge():
+    """Saying it recurs is not saying it has been billed."""
+    row = item("Water", 40.00, 1)
+    row["Confirmed"] = True
+    row["Estimated"] = True
+    seen = observe([row], [])["Water"]
+    assert not seen.confirmed
+    assert seen.verdict == "estimated"
+
+
+def test_an_unconfirmed_single_sighting_still_asks():
+    seen = observe(
+        [item("Uppbeat", 8.99, 8, "uppbeat")],
+        [charge("2026-09-08", "UPPBEAT - SUBSCRIPTION LEEDS", 8.99)],
+    )["Uppbeat"]
+    assert not seen.proven
+    assert "confirm it if you know" in seen.note
