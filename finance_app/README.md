@@ -2,11 +2,12 @@
 
 A personal finance dashboard built with Streamlit, backed by a Google Sheet.
 
-Six pages: a **Dashboard** of headline numbers, a **Budget** page with paycheck
-allocation and a daily burn rate, a searchable **Transactions** ledger, a CSV
-**Import** with automatic categorization, a **Wishlist**, and a **Buy Advisor**
-that tells you whether a purchase is a good idea — with the arithmetic done in
-Python, not by a model.
+Seven pages: a **Dashboard** of headline numbers, a **Budget** page with
+paycheck allocation and a daily burn rate, a **Debts** page that simulates the
+payoff month by month, a searchable **Transactions** ledger, a CSV **Import**
+with automatic categorization, a **Wishlist**, and a **Buy Advisor** that tells
+you whether a purchase is a good idea — with the arithmetic done in Python, not
+by a model.
 
 ---
 
@@ -236,6 +237,44 @@ counts as spendable, so it never divides by zero). **Rollover** carries an
 unspent category balance forward; an overspent category carries zero, never a
 debt.
 
+### Debts
+
+The payoff is **simulated month by month**, not approximated. Amortization with
+a rolling payment against a changing target has no closed form, and a formula
+that is a few months out is worthless when the output is a date.
+
+Each month, in order: interest accrues on every balance, the minimum lands on
+every debt, and everything left in the monthly outlay goes to the first debt
+the strategy has not cleared — cascading onward when that one clears mid-month,
+so no money idles.
+
+Two orderings, both computed:
+
+| | Attacks first | Buys you |
+| --- | --- | --- |
+| **Avalanche** | Highest APR | The least interest, always |
+| **Snowball** | Smallest balance | Your first cleared debt much sooner |
+
+A cleared debt's minimum **rolls into the next debt** rather than back into your
+pocket. That rolling is the entire mechanism by which either strategy beats
+paying minimums forever, so the monthly outlay is constant for the life of the
+plan: every minimum, plus whatever extra you commit.
+
+With **no extra payment the two strategies are identical** — every debt receives
+only its own minimum, so there is no ordering to make. The page says that rather
+than presenting a difference of zero as a finding. They also coincide whenever
+the dearest debt happens to be the smallest.
+
+A minimum payment below the debt's own monthly interest is flagged: that balance
+*grows*. If no debt is ever cleared, there is **no payoff date** rather than a
+fabricated one, and the headline shows what you would owe in five years — the
+interest accrued over the simulation's 50-year horizon is arithmetically correct
+and runs to billions, which tells nobody anything.
+
+Recording a payment writes the new balance to `_Debts` only. It does not add a
+row to `_Transactions`, so your statement import stays the single source of
+truth for what actually moved.
+
 ### Transactions
 
 Everything already in `_Transactions`, filtered down to what you want to look
@@ -312,13 +351,14 @@ render; only the prose is missing.
 pytest
 ```
 
-235 tests, all offline — no API key, no network, no quota, no Google account.
+268 tests, all offline — no API key, no network, no quota, no Google account.
 `tests/conftest.py` holds synthetic DataFrames; `tests/checks/` holds
 longer narrative regression scripts that `pytest` runs as subprocesses.
 
 Covered edge cases include a zero-income month, negative and overdrawn
 balances, a category with no budget set, an item priced above all available
-cash, and a month with no transactions at all.
+cash, a month with no transactions at all, and a debt whose minimum payment is
+smaller than its own monthly interest.
 
 ---
 
@@ -371,6 +411,7 @@ finance_app/
     sheets.py       Google Sheets read/write, cached and quota-aware
   logic/            pure functions: no Streamlit, no Sheets, no network
     budget.py       dashboard and planning math
+    debt.py         payoff simulation, avalanche and snowball
     paycheck.py     bi-weekly pay dates and allocation splitting
     affordability.py  purchase decisions and the verdict thresholds
     categorize.py   two-tier transaction categorization
