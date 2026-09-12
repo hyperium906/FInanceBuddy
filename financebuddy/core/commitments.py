@@ -136,6 +136,13 @@ class CheckPlan:
 
     @property
     def short(self) -> bool:
+        """Whether this check covers its own obligations.
+
+        Not a problem on its own. The rent check never covers itself on this
+        income and is not meant to — the check before it runs a surplus
+        precisely so this one can be carried. What matters is whether the
+        *month* balances, which :func:`running` answers.
+        """
         return self.left < 0
 
     @property
@@ -182,6 +189,50 @@ def for_check(
             allocations, paycheck, period, transactions, first_check=(which == 1)
         ),
     )
+
+
+@dataclass(frozen=True, slots=True)
+class Running:
+    """One check with the balance carried into and out of it."""
+
+    check: CheckPlan
+    opening: float
+
+    @property
+    def closing(self) -> float:
+        """What is left after this check's obligations, including the carry."""
+        return self.opening + self.check.left
+
+    @property
+    def needs_carry(self) -> float:
+        """How much of the opening balance this check has to consume.
+
+        Zero when the check covers itself. This is the honest version of
+        "short": the rent check needs $97.23 carried into it, which is a
+        dependency on the previous check, not a hole in the budget.
+        """
+        return min(max(-self.check.left, 0.0), max(self.opening, 0.0)) if self.check.short else 0.0
+
+    @property
+    def unfunded(self) -> float:
+        """What this check needs that nothing has funded. This one is a problem."""
+        return max(-self.closing, 0.0) if self.closing < 0 else 0.0
+
+
+def running(plans: list[CheckPlan], opening: float = 0.0) -> list[Running]:
+    """Thread a balance through consecutive checks.
+
+    Four independent checks, two of them flagged short, reads as an alarm
+    going off every fortnight. The same four threaded together read as what
+    they are: a surplus check followed by a rent check that spends it. Only a
+    balance that never recovers is actually a shortfall.
+    """
+    out: list[Running] = []
+    balance = float(opening)
+    for plan in plans:
+        out.append(Running(check=plan, opening=balance))
+        balance = out[-1].closing
+    return out
 
 
 def month_ahead(

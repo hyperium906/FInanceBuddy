@@ -120,6 +120,12 @@ class RecurringExpense:
         Column("Next Due", "next_due", DATE, ("next_due",)),
         Column("Account ID", "account_id", TEXT, ("account_id",), optional=True),
         Column("Active", "active", BOOL, ("active",)),
+        # How the charge appears on the statement, when that differs from the
+        # name you call it. "Electricity" is billed by FlintEnergies and
+        # "Software / Music" by Apple; without an alias neither can be matched
+        # back to its charge, and an unmatched bill gets its billing day from
+        # a typed guess instead of from what actually happened.
+        Column("Merchant", "merchant", TEXT, ("merchant",), optional=True),
     )
 
     recurring_id: str
@@ -130,6 +136,7 @@ class RecurringExpense:
     next_due: date | datetime | None = None
     account_id: str = ""
     active: bool = True
+    merchant: str = ""
 
 
 @dataclass(frozen=True, slots=True)

@@ -303,33 +303,52 @@ def _the_month_ahead(anchor, paycheck: float, data, cadence: str, today) -> None
 
     plans = K.month_ahead(anchor, paycheck, data["recurring"], data["allocations"],
                           cadence, today=today, checks=4)
+    threaded = K.running(plans)
+
     st.dataframe(
         pd.DataFrame({
-            "Check": [f"{p.period.start:%d %b}" for p in plans],
-            "Of the month": [f"{p.which} of {p.of}" for p in plans],
-            "Bills": [fc(p.bills_total) for p in plans],
-            "Transfers": [fc(p.moves_total) for p in plans],
-            "Left": [fc(p.left) for p in plans],
-            "": ["⚠️ short" if p.short else ("🏠 rent" if p.is_rent_check else "") for p in plans],
+            "Check": [f"{r.check.period.start:%d %b}" for r in threaded],
+            "Of the month": [f"{r.check.which} of {r.check.of}" for r in threaded],
+            "Carried in": [fc(r.opening) for r in threaded],
+            "Bills": [fc(r.check.bills_total) for r in threaded],
+            "Transfers": [fc(r.check.moves_total) for r in threaded],
+            "Balance after": [fc(r.closing) for r in threaded],
+            "": [
+                ("🚨 unfunded" if r.unfunded else
+                 (f"🏠 needs {fc(r.needs_carry)} carried" if r.needs_carry else
+                  ("🏠 rent" if r.check.is_rent_check else "")))
+                for r in threaded
+            ],
         }),
         hide_index=True,
         width="stretch",
     )
 
-    short = [p for p in plans if p.short]
-    if short:
-        worst = min(short, key=lambda p: p.left)
+    unfunded = [r for r in threaded if r.unfunded]
+    carried = [r for r in threaded if r.needs_carry]
+    if unfunded:
+        st.error(
+            f"**{fc(unfunded[0].unfunded)} unfunded** by "
+            f"{unfunded[0].check.period.start:%d %b} — the surplus from earlier "
+            "checks does not stretch that far."
+        )
+    elif carried:
+        names = ", ".join(f"{r.check.period.start:%d %b}" for r in carried)
         st.caption(
-            f"**{len(short)} of the next {len(plans)} checks do not cover "
-            f"themselves.** The tightest is {worst.period.start:%d %b}, "
-            f"{fc(-worst.left)} short. Carrying that much forward from the "
-            "check before is what makes the month work."
+            f"The rent check never covers itself on this income, and is not "
+            f"meant to — **{names}** draw "
+            f"{fc(sum(r.needs_carry for r in carried))} from the check before. "
+            f"Every check still ends in the black, closing at "
+            f"**{fc(threaded[-1].closing)}**. What it means in practice: do not "
+            "spend the first check of a month down to nothing."
         )
 
     trend = pd.DataFrame(
-        [{"Period": f"{p.period.start:%d %b}", "Measure": "Committed",
-          "Amount": p.committed} for p in plans]
-        + [{"Period": f"{p.period.start:%d %b}", "Measure": "Paycheck",
-            "Amount": p.paycheck} for p in plans]
+        [{"Period": f"{r.check.period.start:%d %b}", "Measure": "Committed",
+          "Amount": r.check.committed} for r in threaded]
+        + [{"Period": f"{r.check.period.start:%d %b}", "Measure": "Paycheck",
+            "Amount": r.check.paycheck} for r in threaded]
+        + [{"Period": f"{r.check.period.start:%d %b}", "Measure": "Running balance",
+            "Amount": r.closing} for r in threaded]
     )
     st.altair_chart(C.trend(trend), width="stretch", theme=None)

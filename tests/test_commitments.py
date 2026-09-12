@@ -160,3 +160,54 @@ def test_an_empty_sheet_produces_an_empty_plan():
     plan = K.for_check(period, PAYCHECK, pd.DataFrame(), pd.DataFrame(), ANCHOR)
     assert plan.committed == 0.0
     assert plan.left == pytest.approx(PAYCHECK)
+
+
+class TestRunningBalance:
+    """Threading the surplus from one check into the next.
+
+    Four checks with two flagged "short" reads as an alarm going off every
+    fortnight. The same four threaded together read as what they are: a
+    surplus check followed by a rent check that spends part of it. Only a
+    balance that never recovers is a real shortfall.
+    """
+
+    def _threaded(self):
+        plans = K.month_ahead(ANCHOR, PAYCHECK, RECURRING, ALLOCATIONS,
+                              today=TODAY, checks=4)
+        return K.running(plans)
+
+    def test_the_surplus_carries_into_the_rent_check(self):
+        first, second = self._threaded()[:2]
+        assert first.opening == 0.0
+        assert second.opening == pytest.approx(first.closing)
+        assert second.opening > 0
+
+    def test_the_rent_check_needs_a_carry_but_is_not_unfunded(self):
+        second = self._threaded()[1]
+        assert second.check.short
+        assert second.needs_carry > 0
+        assert second.unfunded == 0.0
+        assert second.closing > 0
+
+    def test_a_check_that_covers_itself_needs_no_carry(self):
+        first = self._threaded()[0]
+        assert first.needs_carry == 0.0
+        assert first.unfunded == 0.0
+
+    def test_the_balance_never_goes_negative_on_this_income(self):
+        assert all(r.closing > 0 for r in self._threaded())
+
+    def test_a_balance_that_never_recovers_is_flagged_unfunded(self):
+        """The case that is a real problem, as opposed to a carry."""
+        plans = K.month_ahead(ANCHOR, 300.0, RECURRING, ALLOCATIONS,
+                              today=TODAY, checks=2)
+        threaded = K.running(plans)
+        assert any(r.unfunded > 0 for r in threaded)
+
+    def test_an_opening_balance_is_respected(self):
+        threaded = K.running(
+            K.month_ahead(ANCHOR, PAYCHECK, RECURRING, ALLOCATIONS, today=TODAY, checks=1),
+            opening=500.0,
+        )
+        assert threaded[0].opening == 500.0
+        assert threaded[0].closing == pytest.approx(500.0 + threaded[0].check.left)
