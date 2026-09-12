@@ -1,0 +1,13 @@
+# The dependency list for the app, and the one a host installs from.
+# Bounded at the next major version: these are the majors the code is written
+# against, and an unpinned install is how a working deployment breaks itself
+# on someone else's release day.
+streamlit>=1.63,<2
+gspread>=6.2,<7
+google-auth>=2.58,<3
+pandas>=3.0,<4
+google-genai>=2.22,<3
+python-dotenv>=1.2,<2
+requests>=2.34,<3
+beautifulsoup4>=4.15,<5
+extruct>=0.18,<1
