@@ -219,3 +219,40 @@ def test_an_estimate_that_starts_billing_becomes_confirmed():
     seen = observe([row], [charge("2026-08-18", "FLINTWATER UTILITY 4410", 40.00)])["Water"]
     assert seen.verdict == "confirmed"
     assert seen.observed_day == 18
+
+
+# --------------------------------------------------------------------------
+# One charge is not a subscription
+# --------------------------------------------------------------------------
+
+
+def test_a_single_charge_is_not_proof_of_a_subscription():
+    """Both rows inferred from one sighting turned out to be one-off payments."""
+    seen = observe(
+        [item("Uppbeat", 8.99, 8, "uppbeat")],
+        [charge("2026-09-08", "UPPBEAT - SUBSCRIPTION LEEDS", 8.99)],
+    )["Uppbeat"]
+    assert seen.confirmed          # the charge happened
+    assert not seen.proven         # but nothing shows it recurs
+    assert "one-off" in seen.note
+
+
+def test_two_charges_in_different_months_prove_it():
+    seen = observe(
+        [item("Rent", 1875.95, 2, "pointe grand")],
+        [charge("2026-08-04", "Pointe Grand Byr RENT 270105", 1875.95),
+         charge("2026-09-02", "Pointe Grand Byr RENT 272293", 1875.95)],
+    )["Rent"]
+    assert seen.proven
+    assert seen.months_seen == 2
+
+
+def test_two_charges_in_the_same_month_do_not_prove_it():
+    """A merchant billing twice in August is not demonstrating a monthly cycle."""
+    seen = observe(
+        [item("Shop", 20.00, 5, "someshop")],
+        [charge("2026-08-05", "SOMESHOP 001", 20.00),
+         charge("2026-08-20", "SOMESHOP 002", 20.00)],
+    )["Shop"]
+    assert seen.months_seen == 1
+    assert not seen.proven

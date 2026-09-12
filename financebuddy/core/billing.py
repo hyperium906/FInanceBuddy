@@ -125,6 +125,26 @@ class Observation:
         return float(max(self.charges, key=lambda c: c[0])[1])
 
     @property
+    def months_seen(self) -> int:
+        """How many distinct calendar months this charge has appeared in."""
+        return len({(when.year, when.month) for when, _ in self.charges})
+
+    @property
+    def proven(self) -> bool:
+        """Whether the statement actually demonstrates this recurs.
+
+        One charge is a purchase. Two in different months is a subscription.
+        Both rows this app inferred from a single sighting — Anthropic and
+        Uppbeat — turned out to be one-off payments, so a lone charge is
+        reported as what it is: evidence of a charge, not of a commitment.
+
+        With only a few weeks of statement a genuinely monthly bill can only
+        have been seen once, so this is a statement about the strength of the
+        evidence rather than a verdict on the subscription.
+        """
+        return self.months_seen >= 2
+
+    @property
     def last_seen(self) -> pd.Timestamp | None:
         return max((when for when, _ in self.charges), default=None)
 
@@ -187,6 +207,11 @@ class Observation:
             return (
                 f"charged {times}, on the {ordinal(self.observed_day)} — "
                 f"the sheet says the {ordinal(self.sheet_day)}{drift}"
+            )
+        if not self.proven:
+            return (
+                f"seen once, on the {ordinal(self.observed_day)}{drift} — one "
+                "charge is not proof it recurs; it may have been a one-off"
             )
         return f"charged {times}, on the {ordinal(self.observed_day)}{drift or ' — matches'}"
 
