@@ -254,20 +254,39 @@ def _next_due(day: Any) -> str:
 # --------------------------------------------------------------------------
 
 
+def _credentials(settings: Config) -> Credentials:
+    """Build service-account credentials from a path or an inline key.
+
+    A deployed host has no key file on disk, so ``GOOGLE_CREDS_JSON`` carries
+    the key itself; a development machine points at the downloaded JSON.
+    :mod:`finance_app.config` has already decided which of the two is in play.
+    """
+    if settings.google_creds_info is not None:
+        return Credentials.from_service_account_info(
+            settings.google_creds_info, scopes=SCOPES
+        )
+    return Credentials.from_service_account_file(
+        settings.google_creds_path, scopes=SCOPES
+    )
+
+
 @st.cache_resource(show_spinner="Connecting to Google Sheets…")
-def _open_spreadsheet(creds_path: str, sheet_id: str) -> gspread.Spreadsheet:
+def _open_spreadsheet(_settings: Config, creds_key: str, sheet_id: str) -> gspread.Spreadsheet:
     """Authorize the service account and open the workbook.
 
     Cached as a resource so a Streamlit rerun reuses one authenticated client
-    instead of re-authenticating on every interaction.
+    instead of re-authenticating on every interaction. ``_settings`` is
+    underscore-prefixed so Streamlit does not try to hash a dataclass holding a
+    private key; ``creds_key`` identifies the key in the cache instead, so
+    swapping credentials still opens a fresh connection.
     """
     try:
-        creds = Credentials.from_service_account_file(creds_path, scopes=SCOPES)
+        creds = _credentials(_settings)
         return gspread.authorize(creds).open_by_key(sheet_id)
     except Exception as exc:  # noqa: BLE001 - surfaced as SheetsError
         raise SheetsError(
-            f"Could not open spreadsheet {sheet_id!r} using credentials at "
-            f"{creds_path!r}: {exc}"
+            f"Could not open spreadsheet {sheet_id!r} using credentials from "
+            f"{_settings.creds_source}: {exc}"
         ) from exc
 
 
@@ -322,7 +341,9 @@ class SheetsClient:
     def spreadsheet(self) -> gspread.Spreadsheet:
         """The opened workbook, authenticated once and cached."""
         return _open_spreadsheet(
-            self._settings.google_creds_path, self._settings.google_sheet_id
+            self._settings,
+            self._settings.creds_source,
+            self._settings.google_sheet_id,
         )
 
     def _worksheet(self, tab: str) -> gspread.Worksheet:

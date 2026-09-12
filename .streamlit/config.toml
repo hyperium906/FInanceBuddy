@@ -1,0 +1,27 @@
+# Checked in deliberately: these are deployment settings, not secrets.
+# Secrets live in .streamlit/secrets.toml, which is gitignored.
+
+[server]
+# The app writes to your spreadsheet. Uploading a CSV is the only file input
+# it needs, and bank exports are small, so cap the upload well below the
+# default 200 MB rather than accepting arbitrary payloads.
+maxUploadSize = 10
+# Both left on (the defaults, stated here so they are not turned off by
+# accident). XSRF protection guards the upload and form routes; CORS is what
+# actually restricts which origins may open the WebSocket the whole UI runs
+# over. Turning CORS off lets any page connect — Streamlit warns about exactly
+# this — and an app that can rewrite your spreadsheet should not accept that.
+enableXsrfProtection = true
+enableCORS = true
+
+[browser]
+# No usage statistics off a machine that is reading your finances.
+gatherUsageStats = false
+
+[client]
+# A stack trace in the browser can carry spreadsheet contents and cell values.
+# shell.py already turns failures into readable messages with a retry button.
+showErrorDetails = "none"
+
+[theme]
+base = "light"

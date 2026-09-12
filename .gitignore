@@ -32,3 +32,7 @@ dist/
 
 # Local sheet backups — contain real financial data
 backups/
+
+# Streamlit secrets. The template beside it is safe and is committed; the real
+# one holds the service-account key and the Gemini key.
+.streamlit/secrets.toml

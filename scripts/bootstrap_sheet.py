@@ -163,11 +163,11 @@ def main() -> int:
         return 2
 
     print(f"Sheet:      {settings.google_sheet_id}")
-    print(f"Credentials {settings.google_creds_path}\n")
+    print(f"Credentials {settings.creds_source}\n")
 
     try:
         spreadsheet = _open_spreadsheet(
-            settings.google_creds_path, settings.google_sheet_id
+            settings, settings.creds_source, settings.google_sheet_id
         )
         print(f"Opened {spreadsheet.title!r}\n")
         plan = build_plan(spreadsheet)
@@ -230,12 +230,14 @@ def _status(exc: gspread.exceptions.APIError) -> int | None:
 
 
 def _service_account_email(settings) -> str:
-    """The ``client_email`` from the credentials file, for the Share dialog.
+    """The ``client_email`` from the credentials, for the Share dialog.
 
     This is the one piece of information the fix needs and the one nobody has
-    to hand. A key file that cannot be read falls back to a description rather
-    than failing the error path itself.
+    to hand. An inline key already carries it; a key file that cannot be read
+    falls back to a description rather than failing the error path itself.
     """
+    if settings.google_creds_info is not None:
+        return settings.google_creds_info.get("client_email", "") or "your service account"
     try:
         with open(settings.google_creds_path, encoding="utf-8") as handle:
             return json.load(handle).get("client_email", "") or "your service account"

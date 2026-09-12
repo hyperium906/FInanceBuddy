@@ -17,7 +17,7 @@ Python, not by a model.
 ```bash
 git clone <your-repo> && cd FinanceBuddy
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r finance_app/requirements.txt
+pip install -r requirements.txt
 ```
 
 ### 2. Google service account
@@ -35,7 +35,9 @@ its own email address. Nothing is shared publicly.
 4. Open the new service account → **Keys → Add key → Create new key → JSON**.
    A `.json` file downloads. Keep it — you cannot re-download it.
 5. Move that file into the project and point `GOOGLE_CREDS_PATH` at it. It is
-   already covered by `.gitignore`; **never commit it.**
+   already covered by `.gitignore`; **never commit it.** (Deployed, there is no
+   file to point at — you paste its contents into `GOOGLE_CREDS_JSON` instead.
+   See [Deploying](#deploying).)
 6. Open the JSON and copy the `client_email` value — it looks like
    `something@your-project.iam.gserviceaccount.com`.
 7. Open your Google Sheet → **Share** → paste that email → give it **Editor** →
@@ -62,9 +64,16 @@ Fill it in:
 | --- | --- |
 | `GOOGLE_SHEET_ID` | The ID from the sheet URL (step 8) |
 | `GOOGLE_CREDS_PATH` | Path to the service-account JSON (step 4) |
+| `GOOGLE_CREDS_JSON` | *Instead of the path:* the key file's entire contents |
 | `GEMINI_API_KEY` | Your AI Studio key |
 | `GEMINI_MODEL` | Model for the Buy Advisor's explanation, e.g. `gemini-2.5-pro` |
 | `GEMINI_MODEL_FAST` | Model for bulk categorizing, e.g. `gemini-2.5-flash` |
+
+Set **one** of `GOOGLE_CREDS_PATH` and `GOOGLE_CREDS_JSON`. Locally the path is
+easier; deployed there is no file to point at, so the JSON goes in the variable
+(base64 is accepted too, for hosts that will not carry a multi-line value). If
+both are set the inline key wins, so a path left over in a local `.env` cannot
+quietly override the key you configured on the host.
 
 Model names are configuration, never hardcoded. Missing variables raise a
 `ConfigError` at startup naming every one of them.
@@ -78,6 +87,53 @@ streamlit run finance_app/app.py
 On first run the app checks your workbook. **If a tab is missing it shows a
 setup screen listing exactly what to create, with the header row to paste** —
 it does not crash. Create the tabs, press Re-check, and carry on.
+
+---
+
+## Deploying
+
+### Read this first: the app has no login
+
+FinanceBuddy authenticates nobody. Anyone who opens the URL sees every balance,
+every transaction, and every goal, and can edit categories and write to your
+spreadsheet. That is fine on `localhost`. On a public URL it is your entire
+financial life behind a link, so **restrict who can view the app** — the step
+below is not optional garnish.
+
+### Streamlit Community Cloud
+
+Streamlit is a long-running server: it holds each browser session's state in
+the live process and talks to the page over a WebSocket at `/_stcore/stream`.
+Community Cloud is built for exactly that, and is free.
+
+1. Push to GitHub. The repo may be private; Community Cloud can read it.
+2. At [share.streamlit.io](https://share.streamlit.io), **Create app** → pick
+   the repo and branch, and set **Main file path** to `finance_app/app.py`.
+3. Under **Advanced settings**, set the Python version to **3.13** and open
+   **Secrets**. Paste the contents of `.streamlit/secrets.toml.example` and
+   fill it in — including `GOOGLE_CREDS_JSON`, which is the whole downloaded
+   key file, braces and all. Do not set `GOOGLE_CREDS_PATH` there; the file is
+   gitignored and does not exist on the server.
+4. Deploy. Dependencies come from the repo-root `requirements.txt`.
+5. **Settings → Sharing → restrict to specific viewers**, and add only your own
+   Google account. Do this before you share the link anywhere, including with
+   yourself on another device.
+
+Changing a secret restarts the app. `.streamlit/config.toml` is committed and
+applies automatically; it caps uploads, keeps CORS and XSRF protection on, and
+suppresses in-browser stack traces, which on this app would print cell values.
+
+### Why not Vercel
+
+Vercel's Python runtime imports a WSGI/ASGI callable and serves it per request —
+that is what FastAPI, Flask, and Django give it. Streamlit has no such callable:
+`streamlit run` starts a Tornado server, and its per-session state lives in that
+process for as long as the tab is open. A build there fails with
+`No python entrypoint found`, and adding an entrypoint does not help, because
+there is nothing to point it at. The same reasoning rules out any
+function-per-request host. If you want to move off Community Cloud, go to
+something that runs a process — Railway, Render, Fly.io, or Cloud Run — not a
+serverless platform.
 
 ---
 
@@ -256,7 +312,7 @@ render; only the prose is missing.
 pytest
 ```
 
-218 tests, all offline — no API key, no network, no quota, no Google account.
+235 tests, all offline — no API key, no network, no quota, no Google account.
 `tests/conftest.py` holds synthetic DataFrames; `tests/checks/` holds
 longer narrative regression scripts that `pytest` runs as subprocesses.
 

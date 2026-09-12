@@ -151,8 +151,9 @@ def _setup_screen_unreachable(exc: SheetsError) -> None:
         "Common causes:\n"
         "- `GOOGLE_SHEET_ID` does not match the key in the sheet's URL\n"
         "- The sheet has not been shared with your service account's email\n"
-        "- `GOOGLE_CREDS_PATH` points at a file that is missing or not a "
-        "service-account key\n\n"
+        "- The service-account key is wrong: `GOOGLE_CREDS_JSON` is not a "
+        "key file's contents, or `GOOGLE_CREDS_PATH` points at a file that is "
+        "missing\n\n"
         "See the README's **Google service account** section."
     )
     if st.button("Retry", type="primary"):
