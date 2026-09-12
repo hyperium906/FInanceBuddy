@@ -20,6 +20,8 @@ from datetime import date, datetime, timedelta
 
 import pandas as pd
 
+from finance_app.logic import subscriptions as S
+
 #: Days between bi-weekly paychecks.
 PAY_PERIOD_DAYS = 14
 
@@ -332,23 +334,13 @@ def monthly_recurring_outflow(
 
     Weekly and bi-weekly items are converted using the 52-week year, so
     bi-weekly recurring costs are counted at 26/12 per month rather than 2.
+
+    The conversion factors live in :data:`finance_app.logic.subscriptions.PER_MONTH`
+    so that this figure and the Subscriptions page's monthly total are the same
+    arithmetic rather than two copies of it.
     """
     if recurring is None or recurring.empty:
         return 0.0
-
-    per_month = {
-        "weekly": 52 / 12,
-        "biweekly": PAYCHECKS_PER_YEAR / 12,
-        "bi-weekly": PAYCHECKS_PER_YEAR / 12,
-        "fortnightly": PAYCHECKS_PER_YEAR / 12,
-        "semimonthly": 2.0,
-        "semi-monthly": 2.0,
-        "monthly": 1.0,
-        "quarterly": 1 / 3,
-        "semiannual": 1 / 6,
-        "annual": 1 / 12,
-        "yearly": 1 / 12,
-    }
 
     frame = recurring
     if not include_inactive and "Active" in frame.columns:
@@ -358,8 +350,7 @@ def monthly_recurring_outflow(
 
     amounts = pd.to_numeric(frame.get("Amount"), errors="coerce").fillna(0.0).abs()
     freqs = frame.get("Frequency", pd.Series([""] * len(frame)))
-    freqs = freqs.fillna("").astype(str).str.strip().str.lower()
-    factors = freqs.map(per_month).fillna(1.0)
+    factors = freqs.map(S.normalise_frequency).map(S.PER_MONTH)
     return float((amounts * factors).sum())
 
 

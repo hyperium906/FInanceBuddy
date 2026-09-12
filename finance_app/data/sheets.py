@@ -820,6 +820,52 @@ class SheetsClient:
             missing=f"No debt with Debt ID {debt_id!r}.",
         )
 
+    def append_recurring(self, item: RecurringExpense) -> str:
+        """Append one row to ``_Recurring`` and return its Recurring ID.
+
+        Goes through :meth:`_append` rather than writing the row directly, so
+        the cells land by the tab's live header. ``_Recurring`` is the tab most
+        likely to carry a foreign layout — a ``due_day`` column instead of
+        ``Next Due``, columns in another order — and schema-order writing is
+        how a value ends up one column across from where it belongs.
+        """
+        record = item
+        if not record.recurring_id:
+            record = RecurringExpense(**{**_as_dict(item), "recurring_id": new_id("r")})
+
+        headers = [column.header for column in RecurringExpense.COLUMNS]
+        frame = pd.DataFrame([dict(zip(headers, to_row(record)))])
+        self._append(RecurringExpense, frame, id_header="Recurring ID")
+        return record.recurring_id
+
+    def update_recurring(self, recurring_id: str, **fields: Any) -> None:
+        """Set any subset of one ``_Recurring`` row's fields in a single batch."""
+        if not fields:
+            return
+        self._update_cells(
+            tab=RecurringExpense.TAB,
+            match={"Recurring ID": recurring_id},
+            updates=dict(fields),
+            missing=f"No recurring item with Recurring ID {recurring_id!r}.",
+        )
+
+    def set_recurring_active(self, recurring_id: str, active: bool) -> None:
+        """Switch a recurring item on or off.
+
+        Cancelling a subscription switches it off rather than deleting it: the
+        row is the record that you *were* paying for it, and the transactions
+        already imported against it still want something to point at.
+        """
+        self.update_recurring(recurring_id, Active="TRUE" if active else "FALSE")
+
+    def advance_recurring(
+        self, recurring_id: str, next_due: date | datetime
+    ) -> None:
+        """Move a recurring item's ``Next Due`` forward to ``next_due``."""
+        self.update_recurring(
+            recurring_id, **{"Next Due": pd.Timestamp(next_due).strftime("%Y-%m-%d")}
+        )
+
     # -- write helpers -----------------------------------------------------
 
     def _append(self, model: type, df: pd.DataFrame, id_header: str) -> int:

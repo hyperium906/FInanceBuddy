@@ -310,3 +310,56 @@ class TestEmptyInputs:
         )
         assert set(metrics) == {"cash", "debt", "net_worth", "safe_to_spend"}
         assert all(m.value == 0.0 and m.delta == 0.0 for m in metrics.values())
+
+
+class TestUpcomingBillsCountsWhatActuallyBills:
+    """``upcoming_bills`` reads ``Next Due`` as an anchor, not as a claim.
+
+    Matching the column literally understated the figure in two directions: a
+    row nobody had edited since it last billed fell outside the window
+    entirely, and an item billing several times a month was counted once.
+    Both made safe-to-spend read high.
+    """
+
+    @staticmethod
+    def _bill(name: str, amount: float, frequency: str, due: str) -> pd.DataFrame:
+        return pd.DataFrame([{
+            "Recurring ID": name, "Name": name, "Category": "Subscriptions",
+            "Amount": -amount, "Frequency": frequency,
+            "Next Due": pd.Timestamp(due), "Account ID": "a1", "Active": True,
+        }])
+
+    def test_a_stale_row_is_rolled_forward_into_the_window(self, empty_frame):
+        """Anchored in March, still billing on the 20th of every month."""
+        stale = self._bill("Forgotten", 12.0, "monthly", "2026-03-20")
+        assert B.upcoming_bills(stale, empty_frame, today=TODAY) == pytest.approx(12.0)
+
+    def test_a_stale_row_landing_after_the_month_is_still_excluded(self, empty_frame):
+        """Rolling forward is not the same as counting everything."""
+        stale = self._bill("Forgotten", 12.0, "monthly", "2026-03-02")
+        assert B.upcoming_bills(stale, empty_frame, today=TODAY) == 0.0
+
+    def test_a_weekly_bill_counts_once_per_charge(self, empty_frame):
+        """Three Fridays left in the month is three charges, not one."""
+        weekly = self._bill("Coffee", 5.0, "weekly", "2026-09-11")
+        # 11, 18 and 25 September all fall before the 30th.
+        assert B.upcoming_bills(weekly, empty_frame, today=TODAY) == pytest.approx(15.0)
+
+    def test_a_switched_off_bill_is_still_ignored(self, empty_frame):
+        off = self._bill("Cancelled", 99.0, "monthly", "2026-09-20")
+        off.loc[0, "Active"] = False
+        assert B.upcoming_bills(off, empty_frame, today=TODAY) == 0.0
+
+    def test_a_bill_due_today_still_counts(self, empty_frame):
+        """It has not been paid yet."""
+        today = self._bill("Today", 40.0, "monthly", str(TODAY.date()))
+        assert B.upcoming_bills(today, empty_frame, today=TODAY) == pytest.approx(40.0)
+
+    def test_safe_to_spend_falls_by_the_bills_that_were_being_missed(
+        self, accounts, debts, goals, allocations, config, empty_frame
+    ):
+        """The point of the change: forgotten bills leave safe-to-spend."""
+        stale = self._bill("Forgotten", 250.0, "monthly", "2026-03-20")
+        assert B.safe_to_spend(
+            accounts, stale, empty_frame, goals, allocations, config, today=TODAY
+        ) == pytest.approx(13300.0 - 250.0)

@@ -26,6 +26,7 @@ from finance_app.pages_ui import (  # noqa: E402
     goals,
     import_preview,
     shell,
+    subscriptions,
     transactions,
     wishlist,
 )
@@ -53,6 +54,11 @@ def render_goals() -> None:
     goals.render()
 
 
+def render_subscriptions() -> None:
+    """What the recurring commitments cost, and when they next bill."""
+    subscriptions.render()
+
+
 def render_transactions() -> None:
     """Browse, filter, and correct transactions already in the sheet."""
     transactions.render()
@@ -78,6 +84,7 @@ PAGES = {
     "Budget": render_budget,
     "Debts": render_debts,
     "Goals": render_goals,
+    "Subscriptions": render_subscriptions,
     "Transactions": render_transactions,
     "Import": render_import,
     "Wishlist": render_wishlist,

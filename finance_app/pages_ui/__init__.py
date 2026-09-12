@@ -7,6 +7,7 @@ from finance_app.pages_ui import (
     debts,
     goals,
     import_preview,
+    subscriptions,
     transactions,
     wishlist,
 )
@@ -18,6 +19,7 @@ __all__ = [
     "debts",
     "goals",
     "import_preview",
+    "subscriptions",
     "transactions",
     "wishlist",
 ]

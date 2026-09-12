@@ -17,6 +17,8 @@ from datetime import date, datetime, timedelta
 
 import pandas as pd
 
+from finance_app.logic import subscriptions as S
+
 #: Account types counted as spendable cash.
 CASH_TYPES = frozenset({"checking", "savings", "cash", "money market"})
 
@@ -278,22 +280,29 @@ def upcoming_bills(
 ) -> float:
     """Known bills still due between today and the end of this month.
 
-    Counts active ``_Recurring`` rows whose next due date falls in the remainder
-    of the month, plus minimum payments on debts whose due day has not passed.
+    Counts every occurrence of an active ``_Recurring`` item landing in the
+    remainder of the month, plus minimum payments on debts whose due day has
+    not passed.
+
+    Two things this delegates to :mod:`finance_app.logic.subscriptions` rather
+    than reading ``Next Due`` literally, because reading it literally made this
+    figure too small in both directions:
+
+    *A stale date is rolled forward.* ``Next Due`` goes out of date the moment
+    a bill is paid and nobody edits the row. A row still showing March would
+    simply drop out of the window, so the bill vanished from "still due" and
+    safe-to-spend read high — on exactly the rows most likely to be forgotten.
+
+    *A weekly bill counts as often as it bills.* Matching rows counted each
+    item at most once, so a weekly charge with three weeks of the month left
+    was counted once and understated by two thirds.
     """
     now = pd.Timestamp(today or pd.Timestamp.today()).normalize()
     _, month_end = month_bounds(month_key(now))
     total = 0.0
 
     if recurring is not None and not recurring.empty:
-        due = _dates(recurring, "Next Due")
-        active = (
-            recurring["Active"].fillna(False).astype(bool)
-            if "Active" in recurring.columns
-            else pd.Series([True] * len(recurring), index=recurring.index)
-        )
-        window = active & due.notna() & (due >= now) & (due <= month_end)
-        total += float(abs(_num(recurring, "Amount")[window]).sum())
+        total += S.due_between(recurring, now, month_end)
 
     if debts is not None and not debts.empty:
         day = pd.to_numeric(debts.get("Due Day"), errors="coerce")

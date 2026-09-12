@@ -2,10 +2,11 @@
 
 A personal finance dashboard built with Streamlit, backed by a Google Sheet.
 
-Eight pages: a **Dashboard** of headline numbers, a **Budget** page with
+Nine pages: a **Dashboard** of headline numbers, a **Budget** page with
 paycheck allocation and a daily burn rate, a **Debts** page that simulates the
 payoff month by month, a **Goals** page that projects when each one lands, a
-searchable **Transactions** ledger, a CSV **Import** with automatic
+**Subscriptions** page costing every recurring commitment and dating its next
+charge, a searchable **Transactions** ledger, a CSV **Import** with automatic
 categorization, a **Wishlist**, and a **Buy Advisor** that tells you whether a
 purchase is a good idea — with the arithmetic done in Python, not by a model.
 
@@ -217,6 +218,11 @@ Notes:
 
 - **Safe to spend** = cash − bills still due this month − (savings target −
   already allocated, floored at zero).
+- **Bills still due** counts every occurrence an active `_Recurring` item has
+  left in the month, rolling a stale `Next Due` forward from its anchor. Both
+  matter: reading the column literally dropped forgotten rows out of the figure
+  entirely, and counted a weekly bill once when it had three charges to go —
+  each of which made safe-to-spend read high.
 - **Month-over-month deltas** are reconstructed by rewinding transactions from
   today's balances, since `_Accounts` stores only the current figure. An account
   with no transaction history is reported unchanged rather than guessed at.
@@ -322,6 +328,42 @@ retry lands on the same number, and a failure after it leaves the goal's total
 correct with only its history short. The error says exactly that rather than
 reporting a clean success over a half-write.
 
+### Subscriptions
+
+Everything in `_Recurring`, priced per month and dated to its next charge.
+Rent and a streaming service are the same kind of fact — money that leaves on a
+schedule — so the page covers the whole tab and a category filter narrows it to
+`Subscriptions` alone, rather than a heuristic guessing which rows count.
+
+**Every frequency is normalised to a month** through the same factors the
+Budget page uses — `logic/subscriptions.PER_MONTH`, which
+`monthly_recurring_outflow` imports — so the two figures cannot drift apart.
+Bi-weekly is 26 payments a year, not 24: a fortnightly charge costs 2.17× its
+face value each month, which is the number people get wrong about gym
+memberships.
+
+**`Next Due` is treated as an anchor, not a claim.** The moment a bill is paid
+and nobody edits the row, that date is in the past; rolling forward from the
+anchor means a row untouched since March still yields the right September date.
+Occurrences are offset from the anchor rather than stepped one period at a
+time, so a 31st bill lands on the 28th in February and back on the 31st in
+March instead of walking backwards for good.
+
+A stale `Next Due` is flagged for information, not as a problem: `upcoming_bills`
+rolls the date forward the same way, so the Dashboard counts the bill too. What
+is out of date is the cell, which anyone reading the sheet by hand — or the
+formula-driven `Budget Sheet` report — takes at face value. **Record as billed**
+brings it up to the date the app is already using, computed from the anchor, so
+recording a February payment cannot re-anchor a 31st bill to the 28th.
+
+The billing calendar lists one row **per charge, not per item**: a weekly
+subscription really does bill four or five times in a month, and showing it once
+would understate the window it covers.
+
+Cancelling **switches a row off rather than deleting it**. The row is the record
+that you were paying for it, and it stops counting towards every total the
+moment `Active` goes false.
+
 ### Transactions
 
 Everything already in `_Transactions`, filtered down to what you want to look
@@ -398,15 +440,16 @@ render; only the prose is missing.
 pytest
 ```
 
-310 tests, all offline — no API key, no network, no quota, no Google account.
+378 tests, all offline — no API key, no network, no quota, no Google account.
 `tests/conftest.py` holds synthetic DataFrames; `tests/checks/` holds
 longer narrative regression scripts that `pytest` runs as subprocesses.
 
 Covered edge cases include a zero-income month, negative and overdrawn
 balances, a category with no budget set, an item priced above all available
 cash, a month with no transactions at all, a debt whose minimum payment is
-smaller than its own monthly interest, and a savings goal with no contribution
-history to judge it by.
+smaller than its own monthly interest, a savings goal with no contribution
+history to judge it by, and a recurring charge anchored on 29 February falling
+due in a common year.
 
 ---
 
@@ -461,6 +504,7 @@ finance_app/
     budget.py       dashboard and planning math
     debt.py         payoff simulation, avalanche and snowball
     goals.py        goal status, projection, and splitting a lump sum
+    subscriptions.py recurring cost per month and the billing calendar
     paycheck.py     bi-weekly pay dates and allocation splitting
     affordability.py  purchase decisions and the verdict thresholds
     categorize.py   two-tier transaction categorization
