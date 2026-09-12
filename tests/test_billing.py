@@ -183,3 +183,39 @@ def test_charges_outside_the_lookback_are_ignored():
         [charge("2025-01-31", "Spotify USA New York", 12.99)],
     )["Spotify"]
     assert not seen.confirmed
+
+
+# --------------------------------------------------------------------------
+# Estimated, as opposed to missing
+# --------------------------------------------------------------------------
+
+
+def test_an_estimate_is_not_reported_as_missing():
+    """Water is bundled into the rent and given its own row to stay visible.
+
+    It has not been billed yet, which is a different claim from "we have never
+    seen this and it may not exist". Without the distinction a correct
+    placeholder looks like a mistake every time the page opens.
+    """
+    row = item("Water", 40.00, 1)
+    row["Estimated"] = True
+    seen = observe([row], [])["Water"]
+    assert seen.verdict == "estimated"
+    assert not seen.confirmed
+    assert "on purpose" in seen.note
+    assert "may not exist" not in seen.note
+
+
+def test_an_unflagged_missing_bill_is_still_reported():
+    """The flag has to be set deliberately; it is not the default."""
+    seen = observe([item("Water", 40.00, 1)], [])["Water"]
+    assert seen.verdict == "unseen"
+
+
+def test_an_estimate_that_starts_billing_becomes_confirmed():
+    """Once the first charge lands the placeholder stops being a placeholder."""
+    row = item("Water", 40.00, 18, "flintwater")
+    row["Estimated"] = True
+    seen = observe([row], [charge("2026-08-18", "FLINTWATER UTILITY 4410", 40.00)])["Water"]
+    assert seen.verdict == "confirmed"
+    assert seen.observed_day == 18

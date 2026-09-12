@@ -88,6 +88,7 @@ class Observation:
     name: str
     sheet_day: int | None
     sheet_amount: float
+    estimated: bool = False
     charges: list[tuple[pd.Timestamp, float]] = field(default_factory=list)
     #: Charges from the same merchant that do not match the stated amount.
     #: Kept so "39 Amazon charges but none near $14.99" can be said, which is
@@ -150,13 +151,19 @@ class Observation:
     def verdict(self) -> str:
         """``confirmed`` / ``wrong-day`` / ``wrong-amount`` / ``unseen``."""
         if not self.confirmed:
-            return "unseen"
+            return "estimated" if self.estimated else "unseen"
         return "confirmed" if self.day_matches else "wrong-day"
 
     @property
     def note(self) -> str:
         """A sentence a person can act on."""
         times = f"{self.seen}×" if self.seen != 1 else "once"
+        if self.verdict == "estimated":
+            return (
+                "an estimate you entered on purpose — not billed yet, so the "
+                f"{ordinal(self.sheet_day) if self.sheet_day else 'day'} is a "
+                "placeholder until the first charge appears"
+            )
         if self.verdict == "unseen":
             if self.off_amount:
                 return (
@@ -257,6 +264,7 @@ def observe(
 
         out.append(Observation(
             name=name, sheet_day=sheet_day, sheet_amount=sheet_amount,
+            estimated=bool(row.get("Estimated", False)),
             charges=_one_per_month(near), off_amount=off,
         ))
     return out

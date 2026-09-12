@@ -126,6 +126,13 @@ class RecurringExpense:
         # back to its charge, and an unmatched bill gets its billing day from
         # a typed guess instead of from what actually happened.
         Column("Merchant", "merchant", TEXT, ("merchant",), optional=True),
+        # A figure you put in deliberately as a placeholder, for something
+        # real that has not been billed yet. Water here is bundled into the
+        # rent and given its own row so the cost stays visible; it has simply
+        # not been charged. That is a different claim from "we have never
+        # seen this", and without the distinction a correct estimate looks
+        # like a mistake every time the page is opened.
+        Column("Estimated", "estimated", BOOL, ("estimated",), optional=True),
     )
 
     recurring_id: str
@@ -137,6 +144,7 @@ class RecurringExpense:
     account_id: str = ""
     active: bool = True
     merchant: str = ""
+    estimated: bool = False
 
 
 @dataclass(frozen=True, slots=True)
