@@ -50,8 +50,15 @@ its own email address. Nothing is shared publicly.
 ### 3. Gemini API key
 
 Create a key at [Google AI Studio](https://aistudio.google.com/app/apikey).
-The free tier is enough; it allows roughly 10-15 requests per minute, which the
-app backs off around automatically.
+The app backs off automatically around whatever per-minute limit your key has.
+
+Check your key's tier before trusting the defaults. Both models are from the
+3.5 generation, and newer models are not always included in the free tier;
+your actual limits are listed at
+[aistudio.google.com/rate-limit](https://aistudio.google.com/rate-limit). If a
+model is not available to your key, the page using it fails with a 404 or a
+permission error — drop back to `gemini-2.5-flash` and `gemini-2.5-flash-lite`,
+which are free-tier eligible.
 
 ### 4. Environment
 
@@ -67,8 +74,8 @@ Fill it in:
 | `GOOGLE_CREDS_PATH` | Path to the service-account JSON (step 4) |
 | `GOOGLE_CREDS_JSON` | *Instead of the path:* the key file's entire contents |
 | `GEMINI_API_KEY` | Your AI Studio key |
-| `GEMINI_MODEL` | Model for the Buy Advisor's explanation, e.g. `gemini-2.5-pro` |
-| `GEMINI_MODEL_FAST` | Model for bulk categorizing, e.g. `gemini-2.5-flash` |
+| `GEMINI_MODEL` | Model for the Buy Advisor's explanation, e.g. `gemini-3.5-flash` |
+| `GEMINI_MODEL_FAST` | Model for bulk categorizing, e.g. `gemini-3.5-flash-lite` |
 
 Set **one** of `GOOGLE_CREDS_PATH` and `GOOGLE_CREDS_JSON`. Locally the path is
 easier; deployed there is no file to point at, so the JSON goes in the variable
