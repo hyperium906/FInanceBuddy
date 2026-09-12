@@ -75,9 +75,14 @@ class Bill:
     """One recurring charge landing inside a pay period."""
 
     name: str
-    amount: float
+    amount: float            # what leaves the account, tax included
     due: pd.Timestamp
     category: str = ""
+    listed: float = 0.0      # the price before tax, when they differ
+
+    @property
+    def taxed(self) -> bool:
+        return bool(self.listed) and abs(self.amount - self.listed) >= 0.01
 
     def days_away(self, today=None) -> int:
         now = pd.Timestamp(today or pd.Timestamp.today()).normalize()
@@ -100,7 +105,8 @@ def bills_in(
     )
     return [
         Bill(name=str(row["Name"]), amount=float(row["Amount"]),
-             due=pd.Timestamp(row["Due"]), category=str(row["Category"]))
+             due=pd.Timestamp(row["Due"]), category=str(row["Category"]),
+             listed=float(row.get("Listed", 0.0) or 0.0))
         for _, row in table.iterrows()
     ]
 

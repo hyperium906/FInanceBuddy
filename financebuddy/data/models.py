@@ -138,6 +138,13 @@ class RecurringExpense:
         # app would otherwise go on questioning a subscription you already
         # know you have. Your knowledge beats thin evidence; this records it.
         Column("Confirmed", "confirmed", BOOL, ("confirmed",), optional=True),
+        # Sales tax added at the till, in percent points. Per item rather than
+        # a single setting, because it genuinely varies: in the same county
+        # Amazon adds 7% to Prime while Google, Spotify and Apple charge their
+        # list price flat. A blanket rate would overstate four bills to fix
+        # one. What is budgeted is what leaves the account, so the tax belongs
+        # in the figure rather than in a footnote.
+        Column("Tax Rate", "tax_rate", PERCENT, ("tax_rate",), optional=True),
     )
 
     recurring_id: str
@@ -151,6 +158,7 @@ class RecurringExpense:
     merchant: str = ""
     estimated: bool = False
     confirmed_recurring: bool = False
+    tax_rate: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)

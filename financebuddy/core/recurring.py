@@ -277,6 +277,18 @@ def occurrences(
 # --------------------------------------------------------------------------
 
 
+def billed_amount(frame: pd.DataFrame) -> pd.Series:
+    """What actually leaves the account: the listed price plus its sales tax.
+
+    Budgeting the list price understates every taxed bill by the tax, which is
+    small per line and not small at all across a year. The rate is per item
+    because it varies by merchant even within one county.
+    """
+    listed = pd.to_numeric(_column(frame, "Amount", 0.0), errors="coerce").fillna(0.0).abs()
+    rate = pd.to_numeric(_column(frame, "Tax Rate", 0.0), errors="coerce").fillna(0.0)
+    return listed * (1 + rate / 100.0)
+
+
 def _column(frame: pd.DataFrame, name: str, default: object = "") -> pd.Series:
     """``name`` from ``frame``, or a column of ``default`` when it is absent."""
     if name in frame.columns:
@@ -311,7 +323,7 @@ def schedule(
     if frame.empty:
         return empty
 
-    costs = pd.to_numeric(_column(frame, "Amount", 0.0), errors="coerce").fillna(0.0).abs()
+    costs = billed_amount(frame)
     freqs = _column(frame, "Frequency").map(normalise_frequency)
     factors = freqs.map(PER_MONTH)
     due = pd.to_datetime(_column(frame, "Next Due", pd.NaT), errors="coerce")
@@ -422,7 +434,8 @@ def upcoming(
     times as it actually bills. Today counts as upcoming — a bill dated today
     has not been paid yet.
     """
-    columns = ["Due", "Days Away", "Name", "Category", "Amount", "Frequency", "Account ID"]
+    columns = ["Due", "Days Away", "Name", "Category", "Amount", "Listed",
+               "Frequency", "Account ID"]
     if recurring is None or recurring.empty:
         return pd.DataFrame(columns=columns)
 
@@ -430,10 +443,11 @@ def upcoming(
     end = now + pd.Timedelta(days=int(horizon_days))
     frame = recurring if include_inactive else recurring[active_mask(recurring)]
 
+    charged = billed_amount(frame)
     rows: list[dict[str, object]] = []
-    for _, item in frame.iterrows():
+    for position, item in frame.iterrows():
         frequency = normalise_frequency(item.get("Frequency"))
-        amount = pd.to_numeric(item.get("Amount"), errors="coerce")
+        amount = charged.get(position)
         for when in occurrences(item.get("Next Due"), frequency, now, end):
             rows.append(
                 {
@@ -442,6 +456,7 @@ def upcoming(
                     "Name": str(item.get("Name", "") or ""),
                     "Category": str(item.get("Category", "") or ""),
                     "Amount": 0.0 if pd.isna(amount) else abs(float(amount)),
+                    "Listed": abs(float(pd.to_numeric(item.get("Amount"), errors="coerce") or 0.0)),
                     "Frequency": frequency,
                     "Account ID": str(item.get("Account ID", "") or ""),
                 }
@@ -473,9 +488,10 @@ def due_between(
     last = pd.Timestamp(end).normalize()
     frame = recurring if include_inactive else recurring[active_mask(recurring)]
 
+    charged = billed_amount(frame)
     total = 0.0
-    for _, item in frame.iterrows():
-        amount = pd.to_numeric(item.get("Amount"), errors="coerce")
+    for position, item in frame.iterrows():
+        amount = charged.get(position)
         if pd.isna(amount):
             continue
         hits = occurrences(item.get("Next Due"), item.get("Frequency"), first, last)

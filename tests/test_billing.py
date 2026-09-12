@@ -286,3 +286,40 @@ def test_an_unconfirmed_single_sighting_still_asks():
     )["Uppbeat"]
     assert not seen.proven
     assert "confirm it if you know" in seen.note
+
+
+# --------------------------------------------------------------------------
+# Sales tax
+# --------------------------------------------------------------------------
+
+
+def test_tax_is_added_to_what_gets_budgeted():
+    """What leaves the account is the price plus tax, so that is the figure."""
+    from financebuddy.core import recurring as R
+    row = item("Amazon", 14.99, 24, "amazon prime")
+    row["Tax Rate"] = 7.0
+    assert float(R.billed_amount(pd.DataFrame([row])).iloc[0]) == pytest.approx(16.04, abs=0.01)
+
+
+def test_an_untaxed_item_is_budgeted_at_its_price():
+    """Google, Spotify and Apple charge list flat; a blanket rate would break them."""
+    from financebuddy.core import recurring as R
+    row = item("Spotify", 12.99, 30, "spotify")
+    assert float(R.billed_amount(pd.DataFrame([row])).iloc[0]) == pytest.approx(12.99)
+
+
+def test_the_upcoming_calendar_shows_the_taxed_figure_and_the_listed_one():
+    from financebuddy.core import recurring as R
+    row = item("Amazon", 14.99, 24, "amazon prime")
+    row["Tax Rate"] = 7.0
+    due = R.upcoming(pd.DataFrame([row]), today=pd.Timestamp("2026-09-20"), horizon_days=10)
+    assert due.iloc[0]["Amount"] == pytest.approx(16.04, abs=0.01)
+    assert due.iloc[0]["Listed"] == pytest.approx(14.99)
+
+
+def test_tax_reaches_the_period_total():
+    from financebuddy.core import recurring as R
+    row = item("Amazon", 14.99, 24, "amazon prime")
+    row["Tax Rate"] = 7.0
+    total = R.due_between(pd.DataFrame([row]), "2026-09-20", "2026-09-30")
+    assert total == pytest.approx(16.04, abs=0.01)
