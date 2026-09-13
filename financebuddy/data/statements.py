@@ -27,6 +27,13 @@ from financebuddy.core.money import parse_money
 #: What the app needs out of whatever shape the bank exported.
 REQUIRED = ("Date", "Description", "Amount")
 
+#: ``Notes`` on a row typed in on the Log page rather than imported.
+LOGGED_BY_HAND = "Logged by hand"
+
+#: How far apart a hand-logged row and the bank's line for it may be dated.
+#: A card gift on Saturday posts Monday; a check can take most of a week.
+LOGGED_WINDOW_DAYS = 5
+
 #: Header fragments that usually name each required column, best guess first.
 HINTS: dict[str, tuple[str, ...]] = {
     "Date": ("posting date", "post date", "transaction date", "date"),
@@ -115,10 +122,51 @@ class Deduplicated:
     fresh: pd.DataFrame
     already_held: int
     repeated_in_file: int
+    logged_by_hand: int = 0
 
     @property
     def dropped(self) -> int:
-        return self.already_held + self.repeated_in_file
+        return self.already_held + self.repeated_in_file + self.logged_by_hand
+
+
+def near(frame: pd.DataFrame, when, amount: float) -> pd.Series:
+    """Rows of ``frame`` for the same signed amount within the logging window."""
+    if frame is None or frame.empty:
+        return pd.Series(dtype=bool)
+    dates = pd.to_datetime(frame.get("Date"), errors="coerce", format="mixed")
+    amounts = pd.to_numeric(frame.get("Amount"), errors="coerce").fillna(0.0).round(2)
+    close = (dates - pd.Timestamp(when)).abs() <= pd.Timedelta(days=LOGGED_WINDOW_DAYS)
+    return (amounts == round(float(amount), 2)) & close.fillna(False)
+
+
+def _logged(existing: pd.DataFrame | None) -> pd.DataFrame:
+    """The rows of the sheet that were typed in by hand."""
+    if existing is None or existing.empty or "Notes" not in existing.columns:
+        return pd.DataFrame()
+    notes = existing["Notes"].fillna("").astype(str).str.strip().str.lower()
+    return existing[notes.str.startswith(LOGGED_BY_HAND.lower())]
+
+
+def _claimed_by_logged(
+    incoming: pd.DataFrame, existing: pd.DataFrame | None, open_rows: pd.Series
+) -> pd.Series:
+    """Bank lines that are the posting of a row already logged by hand.
+
+    The descriptions never agree — "Tithe" against "HOPE CHURCH 478-9537898"
+    — and the dates usually differ by a day or two, so the exact identity
+    cannot see these. Same amount inside the window is the match, and each
+    logged row claims at most one line, so a genuine second gift of the same
+    amount still comes through.
+    """
+    claimed = pd.Series(False, index=incoming.index)
+    for _, row in _logged(existing).iterrows():
+        when = pd.to_datetime(row.get("Date"), errors="coerce", format="mixed")
+        if pd.isna(when):
+            continue
+        match = open_rows & ~claimed & near(incoming, when, row.get("Amount") or 0.0)
+        if match.any():
+            claimed[match.idxmax()] = True
+    return claimed
 
 
 def deduplicate(incoming: pd.DataFrame, existing: pd.DataFrame) -> Deduplicated:
@@ -127,7 +175,8 @@ def deduplicate(incoming: pd.DataFrame, existing: pd.DataFrame) -> Deduplicated:
     The two are counted separately because they mean different things: rows
     already held are the expected overlap between consecutive exports, while
     rows repeated inside one file are either a genuine pair of identical
-    purchases or a broken export, and are worth looking at.
+    purchases or a broken export, and are worth looking at. Bank lines for
+    something already logged by hand are counted apart again.
     """
     if incoming is None or incoming.empty:
         return Deduplicated(incoming if incoming is not None else pd.DataFrame(), 0, 0)
@@ -137,10 +186,12 @@ def deduplicate(incoming: pd.DataFrame, existing: pd.DataFrame) -> Deduplicated:
 
     seen_before = keys.isin(held)
     within = keys.duplicated(keep="first") & ~seen_before
+    claimed = _claimed_by_logged(incoming, existing, ~seen_before & ~within)
     return Deduplicated(
-        fresh=incoming[~seen_before & ~within].reset_index(drop=True),
+        fresh=incoming[~seen_before & ~within & ~claimed].reset_index(drop=True),
         already_held=int(seen_before.sum()),
         repeated_in_file=int(within.sum()),
+        logged_by_hand=int(claimed.sum()),
     )
 
 

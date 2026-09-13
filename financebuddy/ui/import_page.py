@@ -148,6 +148,13 @@ def _what_arrived(incoming: pd.DataFrame, result: St.Deduplicated) -> None:
     money_out = float(result.fresh["Amount"][result.fresh["Amount"] < 0].sum())
     columns[3].metric("Money out", fc(money_out))
 
+    if result.logged_by_hand:
+        st.info(
+            f"**{result.logged_by_hand} row(s) were skipped as the bank's line "
+            "for something you logged by hand** — same amount, within "
+            f"{St.LOGGED_WINDOW_DAYS} days. What you logged stays in the sheet."
+        )
+
     if result.repeated_in_file:
         st.warning(
             f"**{result.repeated_in_file} row(s) appear twice inside this file** "

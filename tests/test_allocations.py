@@ -177,6 +177,24 @@ def test_a_move_outside_the_period_does_not_count():
     assert move.moved == 0.0
 
 
+def test_a_gift_filed_under_giving_fulfils_the_tithe():
+    """The church charge never says "Tithing"; its category does."""
+    ledger = pd.DataFrame([
+        tx("2026-09-06", "HOPE CHURCH 478-9537898 GA", "Giving", -206.52),
+    ])
+    move = next(m for m in A.moves(REAL, PAYCHECK, PERIOD, ledger)
+                if m.rule.bucket == "Tithing")
+    assert move.moved == pytest.approx(206.52)
+    assert move.done
+
+
+def test_giving_does_not_count_toward_a_savings_rule():
+    ledger = pd.DataFrame([tx("2026-09-06", "Tithe", "Giving", -200.00)])
+    move = next(m for m in A.moves(REAL, PAYCHECK, PERIOD, ledger)
+                if m.rule.bucket == "Chase Savings")
+    assert move.moved == 0.0
+
+
 def test_the_matching_credit_is_not_counted_twice():
     """The same dollar arriving in the other account is not a second move."""
     ledger = pd.DataFrame([

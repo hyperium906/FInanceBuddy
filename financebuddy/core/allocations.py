@@ -29,6 +29,7 @@ import pandas as pd
 
 from financebuddy.core import periods as periods_mod
 from financebuddy.core.money import labels, numbers, text
+from financebuddy.core.savings import classify
 from financebuddy.core.spending import MOVEMENT_CATEGORIES
 
 #: A move is treated as done once it is within this much of what is due.
@@ -166,10 +167,18 @@ def _moved_into(
     names = account.isin(needles)
     for needle in needles:
         names = names | description.str.contains(needle, regex=False, na=False)
+    counted = movement & names
+
+    # A gift never names the rule it fulfils — the statement reads "HOPE
+    # CHURCH 478-9537898", not "Tithing" — and it is filed under Giving, not
+    # Transfer. For a giving rule the category is the evidence, and nothing
+    # else is ever filed there by coincidence.
+    if classify(rule.bucket, rule.account_id) == "giving":
+        counted = counted | (text(transactions, "Category") == "giving")
 
     # Only money leaving counts: the matching credit in the receiving account
     # is the same dollar arriving, and adding both would double it.
-    return float(-amounts[inside & movement & names & (amounts < 0)].sum())
+    return float(-amounts[inside & counted & (amounts < 0)].sum())
 
 
 def moves(

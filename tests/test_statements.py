@@ -146,6 +146,49 @@ def test_an_empty_sheet_takes_everything():
     assert result.dropped == 0
 
 
+def logged(date: str, amount: float, description: str = "Tithe") -> pd.DataFrame:
+    return pd.DataFrame([{"Date": date, "Description": description, "Amount": amount,
+                          "Category": "Giving", "Account ID": "chase_checking",
+                          "Notes": St.LOGGED_BY_HAND}])
+
+
+def bank(*lines: str) -> pd.DataFrame:
+    frame = read("Date,Description,Amount\n" + "\n".join(lines) + "\n")
+    return St.normalise(frame, St.guess_columns(frame))
+
+
+def test_the_bank_line_for_a_logged_gift_is_skipped():
+    """Logged Saturday as "Tithe", posted Monday as the church's name."""
+    result = St.deduplicate(bank("2026-09-15,HOPE CHURCH 478-9537898 GA,-206.52"),
+                            logged("2026-09-13", -206.52))
+    assert result.fresh.empty
+    assert result.logged_by_hand == 1
+    assert result.already_held == 0
+
+
+def test_a_logged_row_claims_only_one_bank_line():
+    """A second gift of the same amount is a second gift."""
+    result = St.deduplicate(
+        bank("2026-09-14,HOPE CHURCH,-206.52", "2026-09-15,HOPE CHURCH,-206.52"),
+        logged("2026-09-13", -206.52),
+    )
+    assert len(result.fresh) == 1
+    assert result.logged_by_hand == 1
+
+
+def test_a_line_outside_the_window_is_not_claimed():
+    result = St.deduplicate(bank("2026-09-25,HOPE CHURCH,-206.52"),
+                            logged("2026-09-13", -206.52))
+    assert len(result.fresh) == 1
+
+
+def test_an_imported_row_of_the_same_amount_claims_nothing():
+    """Only hand-logged rows match loosely; imported ones need the exact key."""
+    held = logged("2026-09-13", -206.52).assign(Notes="")
+    result = St.deduplicate(bank("2026-09-15,HOPE CHURCH,-206.52"), held)
+    assert len(result.fresh) == 1
+
+
 def test_span_reports_the_range():
     first, last = St.span(normalised())
     assert first == pd.Timestamp("2026-09-04")
