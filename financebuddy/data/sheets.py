@@ -394,6 +394,63 @@ class SheetsClient:
         """Every row of ``_Goals``."""
         return self._read(SavingsGoal.TAB)
 
+    #: The hand-maintained planner tab, read but never written.
+    WISHLIST_TAB: ClassVar[str] = "Wishlist & Purchases"
+
+    def get_wishlist_planner(self) -> pd.DataFrame:
+        """Read the hand-maintained ``Wishlist & Purchases`` tab.
+
+        Read directly rather than mirrored into ``_Wishlist`` first. This tab
+        is maintained by hand and is the source of truth for what is wanted;
+        copying it into a data tab would create exactly the drift this
+        workbook already suffers elsewhere, where six of seven account
+        balances disagree with the tab beneath them. The write guard still
+        refuses to touch it, so the app can only ever advise about it.
+
+        The header is found rather than assumed, because a planner laid out
+        for humans has a title and a summary block above its table.
+        """
+        try:
+            values = _tab_values(self.spreadsheet, self._settings.google_sheet_id,
+                                 self.WISHLIST_TAB)
+        except SheetsError:
+            return pd.DataFrame(columns=["Category", "Name", "Priority",
+                                         "Timeline", "Price", "Status", "Notes"])
+
+        wanted = {"category", "item name", "priority", "estimated cost", "status"}
+        start = next(
+            (i for i, row in enumerate(values)
+             if len(wanted & {str(c).strip().lower() for c in row}) >= 4),
+            None,
+        )
+        if start is None:
+            return pd.DataFrame(columns=["Category", "Name", "Priority",
+                                         "Timeline", "Price", "Status", "Notes"])
+
+        header = [str(c).strip() for c in values[start]]
+        position = {name.lower(): i for i, name in enumerate(header) if name}
+        pick = lambda row, key: (
+            row[position[key]].strip() if key in position and position[key] < len(row) else ""
+        )
+
+        rows = []
+        for raw in values[start + 1:]:
+            if not any(str(c).strip() for c in raw):
+                continue
+            name = pick(raw, "item name")
+            if not name:
+                continue
+            rows.append({
+                "Category": pick(raw, "category"),
+                "Name": name,
+                "Priority": pick(raw, "priority"),
+                "Timeline": pick(raw, "target timeline"),
+                "Price": _to_float(pick(raw, "estimated cost")) or 0.0,
+                "Status": pick(raw, "status") or "Planned",
+                "Notes": pick(raw, "notes"),
+            })
+        return pd.DataFrame(rows)
+
     def get_config(self) -> dict[str, str]:
         """``_Config`` as a plain key/value dict, skipping blank keys.
 

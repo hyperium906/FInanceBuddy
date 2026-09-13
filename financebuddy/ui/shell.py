@@ -38,6 +38,7 @@ def load() -> dict[str, object]:
         "allocations": client.get_allocations(),
         "goals": client.get_goals(),
         "wishlist": client.get_wishlist(),
+        "wishlist_planner": client.get_wishlist_planner(),
         "config": client.get_config(),
     }
 

@@ -15,12 +15,13 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from financebuddy.config import ConfigError, get_config  # noqa: E402
-from financebuddy.ui import import_page, payday, shell  # noqa: E402
+from financebuddy.ui import import_page, payday, shell, wishlist_page  # noqa: E402
 
 st.set_page_config(page_title="FinanceBuddy", layout="wide")
 
 PAGES = {
     "Payday": payday.render,
+    "Wishlist": wishlist_page.render,
     "Import": import_page.render,
 }
 
