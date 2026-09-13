@@ -92,6 +92,12 @@ def fetch_product(url: str, timeout: int = TIMEOUT) -> ProductInfo:
     if response.status_code >= 400:
         return ProductInfo(url=clean, reason=f"The site returned HTTP {response.status_code}.")
 
+    # requests falls back to ISO-8859-1 for text/html with no charset in the
+    # HTTP header, which turns a UTF-8 "£51.77" into "Â£51.77". When the
+    # header is silent, believe the bytes instead.
+    if "charset" not in (response.headers.get("content-type") or "").lower():
+        response.encoding = response.apparent_encoding or response.encoding
+
     html = response.text[:MAX_BYTES]
     if not html.strip():
         return ProductInfo(url=clean, reason="The page was empty.")
@@ -101,7 +107,8 @@ def fetch_product(url: str, timeout: int = TIMEOUT) -> ProductInfo:
 
 def extract_product(html: str, url: str = "") -> ProductInfo:
     """Pull name and price out of ``html``. Pure — no network, never raises."""
-    for extractor in (_from_structured_data, _from_opengraph, _from_meta_tags):
+    for extractor in (_from_structured_data, _from_opengraph,
+                      _from_visible_html, _from_meta_tags):
         try:
             found = extractor(html, url)
         except Exception as exc:  # noqa: BLE001 - a bad page must not propagate
@@ -171,6 +178,72 @@ def _from_opengraph(html: str, url: str) -> ProductInfo | None:
     return None
 
 
+#: Class and id fragments that mark an element as carrying the price. Ordered
+#: most specific first, so a "sale price" beats a generic "price" wrapper that
+#: happens to contain the whole block.
+_PRICE_MARKERS = (
+    "price_color", "product-price", "productprice", "sale-price", "saleprice",
+    "current-price", "currentprice", "a-price-whole", "price-now", "our-price",
+    "x-price", "price",
+)
+
+#: A currency amount: an optional symbol, digits, optional thousands, cents.
+_AMOUNT = re.compile(r"[$£€]\s?(\d{1,3}(?:,\d{3})*(?:\.\d{1,2})?|\d+(?:\.\d{1,2})?)")
+
+#: Strings a site appends to every page title. Stripped so the product's own
+#: name survives rather than "A Light in the Attic | Books to Scrape".
+_TITLE_TAIL = re.compile(r"\s*[|\u2013\u2014:-]\s*[^|\u2013\u2014:-]{1,40}$")
+
+
+def _clean_title(title: str) -> str:
+    """Drop a trailing site name from a document title, once."""
+    trimmed = _TITLE_TAIL.sub("", title).strip()
+    return trimmed if len(trimmed) >= 3 else title.strip()
+
+
+def _from_visible_html(html: str, url: str) -> ProductInfo | None:
+    """The name from ``<h1>`` and the price from whatever element carries it.
+
+    The extractors above read a page's declarations about itself. Plenty of
+    shops make none — the price is simply in the markup, in an element whose
+    class says so — and reading only the declarations meant those pages came
+    back empty while the price sat in plain sight.
+    """
+    name = ""
+    heading = re.search(r"<h1[^>]*>(.*?)</h1>", html, re.I | re.S)
+    if heading:
+        name = _strip_tags(heading.group(1))[:120]
+
+    price = None
+    for marker in _PRICE_MARKERS:
+        pattern = re.compile(
+            rf"<[^>]+(?:class|id|data-testid)\s*=\s*[\"'][^\"']*{re.escape(marker)}"
+            rf"[^\"']*[\"'][^>]*>(.{{0,200}}?)</",
+            re.I | re.S,
+        )
+        for found in pattern.finditer(html):
+            price = _to_price(_strip_tags(found.group(1)))
+            if price:
+                break
+        if price:
+            break
+
+    if name or price is not None:
+        return ProductInfo(url=url, name=name, price=price, source="html",
+                           ok=price is not None,
+                           reason="" if price is not None
+                           else "Found a name but no price — check it.")
+    return None
+
+
+def _strip_tags(fragment: str) -> str:
+    """Text content of an HTML fragment, whitespace collapsed."""
+    text = re.sub(r"<[^>]+>", " ", fragment)
+    text = (text.replace("&amp;", "&").replace("&nbsp;", " ")
+                .replace("&#39;", "'").replace("&quot;", '"'))
+    return re.sub(r"\s+", " ", text).strip()
+
+
 #: Titles a bot-block page wears. A blocked page still has a ``<title>``, and
 #: reading it as the product name is worse than reading nothing: the form
 #: fills with "Robot Check" and the reader has to notice and undo it, rather
@@ -205,7 +278,7 @@ def _from_meta_tags(html: str, url: str) -> ProductInfo | None:
                     url=url,
                     reason="The site refused automated access.",
                 )
-            name, titled = candidate, True
+            name, titled = _clean_title(candidate), True
 
     if name or price is not None:
         return ProductInfo(

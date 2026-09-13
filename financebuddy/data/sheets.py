@@ -320,8 +320,18 @@ def new_id(prefix: str = "") -> str:
     return f"{prefix}{token}" if prefix else token
 
 
+#: Hand-built tabs the app may nonetheless append to. Only the wishlist
+#: planner: its summary formulas read a range that now extends well past the
+#: data, so a row added at the end is counted like any other. ``Budget Sheet``
+#: stays forbidden — every figure on it is typed or computed in place, and
+#: there is no row shape to append.
+APPENDABLE_TABS = frozenset({"Wishlist & Purchases"})
+
+
 def _guard_write(tab: str) -> None:
-    """Refuse to write anywhere but an underscore-prefixed data tab."""
+    """Refuse to write anywhere but a data tab or an explicitly appendable one."""
+    if tab in APPENDABLE_TABS:
+        return
     if tab == REPORT_TAB or not tab.startswith(WRITE_PREFIX):
         raise SheetsError(
             f"Refusing to write to tab {tab!r}: only tabs prefixed with "
@@ -450,6 +460,114 @@ class SheetsClient:
                 "Notes": pick(raw, "notes"),
             })
         return pd.DataFrame(rows)
+
+    def append_wishlist_planner_row(
+        self,
+        name: str,
+        price: float,
+        category: str = "",
+        priority: str = "Medium",
+        timeline: str = "",
+        notes: str = "",
+    ) -> int:
+        """Append one item to the hand-built ``Wishlist & Purchases`` tab.
+
+        Placed in the first genuinely empty row rather than at the bottom of
+        the grid: the tab has been widened so its totals cover rows far below
+        the data, and appending to row 300 would leave a gap the reader has to
+        scroll past to find what they just added.
+
+        Cells are positioned by the tab's live header, so a reordered or
+        renamed column cannot send a value one column across.
+        """
+        tab = self.WISHLIST_TAB
+        _guard_write(tab)
+        worksheet = self._worksheet(tab)
+        try:
+            values = worksheet.get_all_values()
+        except Exception as exc:  # noqa: BLE001
+            raise SheetsError(f"Failed reading tab {tab!r}: {exc}") from exc
+
+        wanted = {"category", "item name", "priority", "estimated cost", "status"}
+        header_row = next(
+            (i for i, row in enumerate(values)
+             if len(wanted & {str(c).strip().lower() for c in row}) >= 4),
+            None,
+        )
+        if header_row is None:
+            raise SheetsError(
+                f"Could not find the item table's header in {tab!r}. It needs a "
+                "row naming Category, Item Name, Priority, Estimated Cost and Status."
+            )
+
+        header = [str(c).strip().lower() for c in values[header_row]]
+        position = {name_: i for i, name_ in enumerate(header) if name_}
+
+        # The item block ends at a "Total" row carrying its own SUM. New items
+        # must go ABOVE it: appended below, they fall outside that sum, and a
+        # summary range widened to include them swallows the Total row too and
+        # counts every item twice.
+        label = position.get("category", 0)
+        total_row = next(
+            (i + 1 for i in range(header_row + 1, len(values))
+             if str(values[i][label] if label < len(values[i]) else "").strip().lower()
+             == "total"),
+            None,
+        )
+        if total_row is None:
+            target = len(values) + 1
+            for offset in range(header_row + 1, len(values)):
+                if not any(str(cell).strip() for cell in values[offset]):
+                    target = offset + 1
+                    break
+        else:
+            target = total_row
+            try:
+                worksheet.insert_row([""] * len(header), index=target)
+            except Exception as exc:  # noqa: BLE001
+                raise SheetsError(f"Failed making room in {tab!r}: {exc}") from exc
+
+        cells = {
+            "category": category, "item name": name,
+            "priority": priority, "target timeline": timeline,
+            "estimated cost": price, "status": "Planned", "notes": notes,
+        }
+        batch = [
+            {"range": gspread.utils.rowcol_to_a1(target, position[key] + 1),
+             "values": [[value]]}
+            for key, value in cells.items() if key in position
+        ]
+        # Keep every range that reads the item block in step with it, rather
+        # than trusting a spreadsheet's own range-expansion rules, which differ
+        # depending on whether a row lands inside or just past a range.
+        if total_row is not None:
+            first, last = header_row + 2, target
+            money = gspread.utils.rowcol_to_a1(1, position["estimated cost"] + 1)[0]
+            item = gspread.utils.rowcol_to_a1(1, position["item name"] + 1)[0]
+            status = gspread.utils.rowcol_to_a1(1, position["status"] + 1)[0]
+            batch += [
+                {"range": f"{money}{target + 1}",
+                 "values": [[f"=SUM({money}{first}:{money}{last})"]]},
+                {"range": "B4", "values": [[f"=SUM({money}{first}:{money}{last})"]]},
+                {"range": "D4", "values": [[f"=COUNTA({item}{first}:{item}{last})"]]},
+                {"range": "F4", "values": [[
+                    f'=SUMIF({status}{first}:{status}{last}, "Purchased", '
+                    f"{money}{first}:{money}{last})"]]},
+                {"range": "J4", "values": [[
+                    f'=IFERROR(COUNTIF({status}{first}:{status}{last}, "Purchased")'
+                    f"/COUNTA({item}{first}:{item}{last}), 0)"]]},
+                {"range": "J5", "values": [[
+                    f'=COUNTIF({status}{first}:{status}{last}, "Purchased") & " of " '
+                    f'& COUNTA({item}{first}:{item}{last}) & " bought"']]},
+            ]
+
+        try:
+            with _writing(f"Adding {name}…"):
+                worksheet.batch_update(batch, value_input_option="USER_ENTERED")
+        except Exception as exc:  # noqa: BLE001
+            raise SheetsError(f"Failed appending to tab {tab!r}: {exc}") from exc
+        clear_cache()
+        return target
 
     def get_config(self) -> dict[str, str]:
         """``_Config`` as a plain key/value dict, skipping blank keys.

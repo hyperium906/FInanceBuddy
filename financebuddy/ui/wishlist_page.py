@@ -16,11 +16,10 @@ from financebuddy.core import commitments as K
 from financebuddy.core import periods as P
 from financebuddy.core import spending as S
 from financebuddy.core import wishlist as W
-from financebuddy.core.categorize import CATEGORIES
+from financebuddy.core.categorize import CATEGORIES as CATEGORIES_IN_USE
 from financebuddy.core.money import format_currency as fc
 from financebuddy.data.products import fetch_product
 from financebuddy.data.sheets import SheetsClient, SheetsError
-from financebuddy.data.models import WishlistItem
 from financebuddy.ui import charts as C
 from financebuddy.ui import shell
 
@@ -223,53 +222,65 @@ def _add_from_link(data: dict) -> None:
                     "type the name and price in yourself."
                 )
 
-        prefill = st.session_state.get("wish_found")
-        with st.form("wish_add", clear_on_submit=True):
+        # Write the read values into state BEFORE the widgets are built. A
+        # keyed widget ignores its `value` argument once state holds a key, so
+        # passing both left the name box empty after a successful read — and
+        # an empty name box fails the check below, which is why reading a page
+        # appeared to work and then added nothing.
+        found = st.session_state.get("wish_found")
+        if found is not None and st.session_state.get("wish_filled_from") != found.url:
+            st.session_state["wish_name"] = found.name
+            st.session_state["wish_price"] = float(found.price or 0.0)
+            st.session_state["wish_filled_from"] = found.url
+
+        with st.form("wish_add"):
             left, right = st.columns([3, 2])
-            name = left.text_input(
-                "Name", value=(prefill.name if prefill else ""), key="wish_name")
-            price = right.number_input(
-                "Price", min_value=0.0, step=10.0,
-                value=float(prefill.price) if prefill and prefill.price else 0.0,
-                key="wish_price")
+            name = left.text_input("Name", key="wish_name")
+            price = right.number_input("Price", min_value=0.0, step=10.0,
+                                       key="wish_price")
             category = left.selectbox(
-                "Category", ["Shopping", *[c for c in CATEGORIES if c != "Shopping"]],
+                "Category",
+                sorted({*CATEGORIES_IN_USE, "Shopping"}),
                 key="wish_category")
             priority = right.selectbox("Priority", ["High", "Medium", "Low"],
                                        index=1, key="wish_priority")
+            timeline = left.text_input(
+                "Wanted by", key="wish_timeline", placeholder="Q1 2027",
+                help="Optional. A quarter is read as its last day.")
 
-            if not st.form_submit_button("Add to the list", type="primary"):
-                return
-            if not name.strip():
-                st.warning("It needs a name.")
-                return
-            if price <= 0:
-                st.warning("It needs a price above zero.")
-                return
+            submitted = st.form_submit_button("Add to the list", type="primary")
 
-            item = WishlistItem(
-                item_id="", name=name.strip(), price=float(price),
-                url=(url.strip() if url else ""), category=str(category),
-                priority=str(priority), status="Planned",
-                added_on=pd.Timestamp.today().date(),
+        if not submitted:
+            return
+        if not name.strip():
+            st.warning("It needs a name — the page could not supply one.")
+            return
+        if price <= 0:
+            st.warning("It needs a price above zero.")
+            return
+
+        try:
+            row = SheetsClient().append_wishlist_planner_row(
+                name=name.strip(), price=float(price), category=str(category),
+                priority=str(priority), timeline=timeline.strip(),
+                notes=(url.strip() if url else ""),
             )
-            try:
-                SheetsClient().append_wishlist_item(item)
-            except SheetsError as exc:
-                st.error(str(exc))
-                return
+        except SheetsError as exc:
+            st.error(str(exc))
+            return
 
-            st.session_state.pop("wish_found", None)
-            shell.clear()
-            st.success(f"Added {item.name} at {fc(item.price)}.")
-            st.rerun()
+        for key in ("wish_found", "wish_filled_from", "wish_name", "wish_price",
+                    "wish_url", "wish_timeline"):
+            st.session_state.pop(key, None)
+        shell.clear()
+        st.success(f"Added {name.strip()} at {fc(price)} — row {row} of your planner.")
+        st.rerun()
+
 
     st.caption(
-        "Items added here go to the `_Wishlist` tab, not to "
-        "`Wishlist & Purchases`. That tab's totals read a fixed range "
-        "(`SUM(F8:F44)`) which its rows already fill, so anything appended "
-        "beneath them would stop being counted without saying so. Both lists "
-        "are read together above."
+        "Items are added to your `Wishlist & Purchases` tab, in the first "
+        "empty row. Its totals now cover rows 8–300, so anything added here "
+        "is counted by the summary at the top of that tab like everything else."
     )
 
 
