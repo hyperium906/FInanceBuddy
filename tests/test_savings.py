@@ -34,10 +34,14 @@ ALLOCATIONS = pd.DataFrame([
 ACCOUNTS = pd.DataFrame([
     {"Account ID": "chase_savings", "Name": "Chase Savings", "Type": "savings",
      "Balance": 1300.00},
-    {"Account ID": "fidelity_roth", "Name": "Roth", "Type": "retirement",
+    {"Account ID": "fidelity_roth", "Name": "Roth IRA", "Type": "retirement",
      "Balance": 118.52},
     {"Account ID": "fidelity_crypto", "Name": "Crypto", "Type": "crypto",
      "Balance": 54.01},
+    # Named "public"/"alpaca" while the buckets say "Public"/"Alpaca".
+    {"Account ID": "public", "Name": "Public Brokerage", "Type": "investment",
+     "Balance": 50.00},
+    {"Account ID": "alpaca", "Name": "Alpaca", "Type": "investment", "Balance": 0.00},
 ])
 
 
@@ -53,15 +57,41 @@ def pots() -> list[S.Bucket]:
 @pytest.mark.parametrize("bucket, expected", [
     ("Student Loan", "debt"), ("Car Loan", "debt"), ("Credit Card", "debt"),
     ("Tithing", "giving"), ("Church", "giving"), ("Charity", "giving"),
-    ("Chase Savings", "savings"), ("Roth IRA", "savings"), ("Alpaca", "savings"),
+    ("Roth IRA", "retirement"), ("401k", "retirement"), ("Pension", "retirement"),
+    ("Chase Savings", "savings"), ("Alpaca", "savings"), ("Trading & Crypto", "savings"),
 ])
 def test_buckets_are_classified(bucket, expected):
     assert S.classify(bucket) == expected
 
 
 def test_the_savings_rate_excludes_repayment_and_giving():
-    """Counting the loan and the tithe would overstate it by half."""
-    assert S.savings_rate(pots()) == pytest.approx(600.0)
+    """Counting the loan and the tithe would report $1,347 against a real $500."""
+    assert S.savings_rate(pots()) == pytest.approx(500.0)
+
+
+def test_retirement_is_saving_but_not_reachable():
+    """A Roth cannot pay for a car in December without a penalty."""
+    assert S.retirement_rate(pots()) == pytest.approx(100.0)
+    assert S.retirement_total(pots()) == pytest.approx(118.52)
+    assert S.saved_total(pots()) == pytest.approx(1300.00 + 54.01 + 50.00 + 0.0)
+
+
+def test_retirement_is_reported_not_dropped():
+    """It is saving; leaving it out entirely would understate the picture."""
+    assert any(b.kind == "retirement" for b in pots())
+
+
+def test_a_bucket_finds_its_account_whatever_the_casing():
+    """Buckets are named by hand; account ids are not."""
+    assert next(b for b in pots() if b.name == "Public").balance == pytest.approx(50.0)
+    assert next(b for b in pots() if b.name == "Alpaca").balance == pytest.approx(0.0)
+
+
+def test_a_zero_balance_is_tracked_not_missing():
+    """Alpaca holds nothing, which is known - unlike a bucket with no account."""
+    alpaca = next(b for b in pots() if b.name == "Alpaca")
+    assert alpaca.tracked
+    assert alpaca.balance == 0.0
 
 
 def test_the_tithe_is_priced_off_the_paycheck():
@@ -76,15 +106,13 @@ def test_the_tithe_is_priced_off_the_paycheck():
 
 
 def test_an_untracked_bucket_is_not_counted_as_empty():
-    """$100 a month has been going into Alpaca; the total is unknown, not nil."""
-    alpaca = next(b for b in pots() if b.name == "Alpaca")
-    assert not alpaca.tracked
-    assert alpaca.balance is None
-    assert [b.name for b in S.untracked(pots())] == ["Public", "Alpaca"]
-
-
-def test_saved_total_counts_only_what_is_known():
-    assert S.saved_total(pots()) == pytest.approx(1300.00 + 118.52 + 54.01)
+    """Unknown and nil are different claims; averaging them in would mislead."""
+    thin = pd.DataFrame([rule("Somewhere Else", 100.0)])
+    bucket = S.buckets(thin, ACCOUNTS, PAYCHECK)[0]
+    assert not bucket.tracked
+    assert bucket.balance is None
+    assert S.saved_total([bucket]) == 0.0
+    assert [b.name for b in S.untracked([bucket])] == ["Somewhere Else"]
 
 
 # --------------------------------------------------------------------------

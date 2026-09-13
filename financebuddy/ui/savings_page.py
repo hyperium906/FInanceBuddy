@@ -87,7 +87,10 @@ def _headline(pots: list[SV.Bucket], spare: float, cadence: str) -> None:
         "Spare on top", f"{fc(spare)}/check",
         f"{fc(P.per_month(spare, cadence))}/mo", delta_color="off",
     )
-    columns[3].metric("A year of this", fc(rate * 12 + P.per_month(spare, cadence) * 12))
+    columns[3].metric(
+        "Retirement", fc(SV.retirement_total(pots)),
+        f"{fc(SV.retirement_rate(pots))}/mo — not reachable", delta_color="off",
+    )
 
     if missing:
         st.caption(
@@ -105,6 +108,7 @@ def _where_it_goes(pots: list[SV.Bucket]) -> None:
 
     savings = [b for b in pots if b.kind == "savings"]
     other = [b for b in pots if b.kind != "savings"]
+    locked = [b for b in pots if b.kind == "retirement"]
 
     table = pd.DataFrame({
         "Category": [b.name for b in savings],
@@ -123,13 +127,22 @@ def _where_it_goes(pots: list[SV.Bucket]) -> None:
         }),
         hide_index=True, width="stretch",
     )
-    if other:
+    excluded = [b for b in other if b.kind != "retirement"]
+    if excluded:
         st.caption(
             "**"
-            + ", ".join(b.name for b in other)
+            + ", ".join(b.name for b in excluded)
             + "** are left out of the savings rate: repayment and giving both "
             "leave and neither accumulates, so counting them would overstate "
             "what is being put aside."
+        )
+    if locked:
+        st.caption(
+            "**"
+            + ", ".join(b.name for b in locked)
+            + "** is saving, but not money a goal this year can draw on — it is "
+            "counted on its own line above rather than in the rate a deadline "
+            "is measured against."
         )
 
 

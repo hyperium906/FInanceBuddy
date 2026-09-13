@@ -33,17 +33,32 @@ DEBT_WORDS = ("loan", "debt", "card", "mortgage", "payoff", "credit")
 #: Bucket names that are giving rather than saving.
 GIVING_WORDS = ("tith", "giving", "church", "offering", "donat", "charity")
 
+#: Bucket names that are retirement rather than saving. Money going here is
+#: genuinely being put aside, but it cannot be spent for decades without a
+#: penalty, so it must not appear in a figure that a car is measured against.
+#: It is reported on its own line rather than dropped — it is not a cost.
+RETIREMENT_WORDS = ("roth", "ira", "401k", "401(k)", "403b", "pension",
+                    "retirement", "tsp")
+
 #: Account types whose balance counts as money saved.
 SAVED_TYPES = frozenset({"savings", "investment", "retirement", "crypto", "brokerage"})
 
 
 def classify(bucket: str, account_id: str = "") -> str:
-    """``savings`` / ``debt`` / ``giving`` for one allocation bucket."""
+    """``savings`` / ``retirement`` / ``debt`` / ``giving`` for one bucket.
+
+    The split that matters is not "is this money being put aside" — three of
+    these are — but "could this pay for something this year". Retirement
+    cannot, so it is counted apart from the figure a dated goal is measured
+    against, while still being shown as the saving that it is.
+    """
     haystack = f"{bucket} {account_id}".lower()
     if any(word in haystack for word in DEBT_WORDS):
         return "debt"
     if any(word in haystack for word in GIVING_WORDS):
         return "giving"
+    if any(word in haystack for word in RETIREMENT_WORDS):
+        return "retirement"
     return "savings"
 
 
@@ -80,17 +95,21 @@ def buckets(
     """Every standing allocation, classified, with its balance where known."""
     from financebuddy.core import allocations as allocations_mod
 
+    # Buckets are named by hand and accounts are given ids, so "Public" has to
+    # find "public" and "Public Brokerage". Matching on a folded id and on the
+    # account's name as well is what keeps a hand-typed sheet working without
+    # asking anyone to rename anything.
     known: dict[str, float] = {}
-    types: dict[str, str] = {}
     if accounts is not None and not accounts.empty:
         ids = labels(accounts, "Account ID", blank="")
+        names = labels(accounts, "Name", blank="")
         balances = numbers(accounts, "Balance")
-        kinds = text(accounts, "Type")
         for position in range(len(accounts)):
-            key = str(ids.iloc[position]).strip()
-            if key:
-                known[key] = float(balances.iloc[position])
-                types[key] = str(kinds.iloc[position])
+            balance = float(balances.iloc[position])
+            for candidate in (ids.iloc[position], names.iloc[position]):
+                key = str(candidate).strip().lower().replace(" ", "_")
+                if key:
+                    known.setdefault(key, balance)
 
     out: list[Bucket] = []
     for rule in allocations_mod.rules(allocations):
@@ -104,14 +123,37 @@ def buckets(
             monthly=float(monthly),
             kind=classify(rule.bucket, rule.account_id),
             account_id=rule.account_id,
-            balance=known.get(rule.account_id),
+            balance=_lookup(known, rule.account_id, rule.bucket),
         ))
     return out
 
 
+def _lookup(known: dict[str, float], account_id: str, bucket: str) -> float | None:
+    """Find a balance by account id, then by bucket name, folding both."""
+    for candidate in (account_id, bucket):
+        key = str(candidate or "").strip().lower().replace(" ", "_")
+        if key in known:
+            return known[key]
+    return None
+
+
 def savings_rate(items: list[Bucket]) -> float:
-    """Monthly total going into savings, excluding repayment and giving."""
+    """Monthly total going into reachable savings.
+
+    Excludes repayment and giving, which do not accumulate, and retirement,
+    which accumulates somewhere a goal three months out cannot draw on.
+    """
     return sum(b.monthly for b in items if b.kind == "savings")
+
+
+def retirement_rate(items: list[Bucket]) -> float:
+    """Monthly total going into retirement. Saved, but not reachable."""
+    return sum(b.monthly for b in items if b.kind == "retirement")
+
+
+def retirement_total(items: list[Bucket]) -> float:
+    """What the tracked retirement buckets hold."""
+    return sum(b.balance or 0.0 for b in items if b.kind == "retirement" and b.tracked)
 
 
 def saved_total(items: list[Bucket]) -> float:
