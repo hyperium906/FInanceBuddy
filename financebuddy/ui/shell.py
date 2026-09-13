@@ -21,9 +21,30 @@ from financebuddy.core.money import parse_money
 PERIOD_OFFSET = "period_offset"
 
 
-@st.cache_data(ttl=300, show_spinner="Reading your sheet…")
+#: Bump whenever :func:`_read` returns a different set of keys.
+#:
+#: ``st.cache_data`` keys on the arguments, not on what the body returns, so a
+#: cache filled before a new key existed survives the deploy that added it and
+#: every page reading that key raises a KeyError until it expires. Passing the
+#: shape in as an argument makes adding a key invalidate the cache, which is
+#: the behaviour everyone assumes is already happening.
+_SHAPE = 2
+
+
 def load() -> dict[str, object]:
-    """Every tab the app needs, in one cached pass.
+    """Every tab the app needs, in one cached pass."""
+    return _read(_SHAPE)
+
+
+def clear() -> None:
+    """Drop the cached read, so the next access re-fetches."""
+    clear_cache()
+    _read.clear()
+
+
+@st.cache_data(ttl=300, show_spinner="Reading your sheet…")
+def _read(shape: int) -> dict[str, object]:
+    """Read every tab.
 
     One read per tab per five minutes: Google allows roughly 60 reads a minute
     and Streamlit re-runs the whole script on every widget interaction, so
@@ -90,8 +111,7 @@ def period_nav(period: P.PayPeriod, today=None) -> None:
 def sidebar() -> None:
     """Controls that belong to no single page."""
     if st.sidebar.button("🔄 Refresh data", width="stretch"):
-        clear_cache()
-        load.clear()
+        clear()
         st.rerun()
     st.sidebar.caption(
         "Cached for five minutes. Press refresh after editing the sheet by hand."
@@ -106,12 +126,22 @@ def guarded(name: str, render: Callable[[], None]) -> None:
         st.error(str(exc))
         st.caption("The sheet could not be read. Check sharing and the tab names.")
         if st.button("Try again", key=f"retry_{name}"):
-            clear_cache()
-            load.clear()
+            clear()
             st.rerun()
     except P.PayScheduleError as exc:
         st.error(str(exc))
         st.caption("Set it in the `_Config` tab, then refresh.")
+    except KeyError as exc:
+        # Almost always a cache filled before the key existed. Say so, and
+        # give the reader the one button that fixes it, rather than calling a
+        # five-minute-old cache a bug.
+        st.warning(
+            f"{name} needs data this session has not loaded yet ({exc}). "
+            "The cached read predates it."
+        )
+        if st.button("Reload the sheet", key=f"reload_{name}", type="primary"):
+            clear()
+            st.rerun()
     except Exception as exc:  # noqa: BLE001 - the boundary is the point
         st.error(f"{name} could not be drawn: {exc}")
         st.caption("This is a bug. The rest of the app still works.")

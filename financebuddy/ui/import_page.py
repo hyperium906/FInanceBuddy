@@ -227,7 +227,7 @@ def _preview(config: dict[str, str]) -> None:
         return
 
     _reset()
-    shell.load.clear()
+    shell.clear()
     st.success(
         f"Wrote {written} transaction(s)."
         + (f" Learned {learned} new categorization rule(s)." if learned else "")
