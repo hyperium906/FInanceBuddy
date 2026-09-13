@@ -1,0 +1,40 @@
+@import "tailwindcss";
+
+/* Light palette on bare :root; dark redefines only the tokens. The teal accent
+   is the one the app has always used for "on track". */
+:root {
+  --bg: #ffffff;
+  --panel: #f3f5f7;
+  --ink: #16191d;
+  --muted: #52514e;
+  --border: #dfe3e8;
+  --accent: #2a9d8f;
+  --track: rgba(128, 128, 128, 0.22);
+  --neutral: #8a8a85;
+
+  /* Categorical order is fixed and never cycled. CVD-validated per mode. */
+  --cat-1: #2a78d6; --cat-2: #eb6834; --cat-3: #1baf7a; --cat-4: #eda100;
+  --cat-5: #e87ba4; --cat-6: #008300; --cat-7: #4a3aa7; --cat-8: #e34948;
+
+  /* Status is reserved: never a series colour, always with a glyph and label. */
+  --good: #0ca30c; --warn: #fab219; --bad: #d03b3b; --none: #8a8a85;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #11151a;
+    --panel: #1a2029;
+    --ink: #e3e6ea;
+    --muted: #9a9a94;
+    --border: #2b333f;
+    --neutral: #9a9a94;
+    --cat-1: #3987e5; --cat-2: #d95926; --cat-3: #199e70; --cat-4: #c98500;
+    --cat-5: #d55181; --cat-6: #008300; --cat-7: #9085e9; --cat-8: #e66767;
+  }
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}

@@ -8,31 +8,28 @@
 # handful the app actually ships are named back in below.
 *.json
 !package.json
+!package-lock.json
 !tsconfig.json
 !.vscode/*.json
 # Merchant -> category rules. Not a secret, and the app's cheap first tier of
 # categorization is empty without it.
-!finance_app/category_rules.json
+!src/lib/category-rules.json
 
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
-.venv/
-venv/
-build/
-dist/
+# Next.js / Node
+node_modules/
+.next/
+out/
+next-env.d.ts
+*.tsbuildinfo
+.vercel/
 
 # Tooling
 .idea/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
 .DS_Store
 
 # Local sheet backups — contain real financial data
 backups/
 
-# Streamlit secrets. The template beside it is safe and is committed; the real
-# one holds the service-account key and the Gemini key.
-.streamlit/secrets.toml
+# The old Streamlit secrets file, if it is still on disk. It holds the
+# service-account key and the Gemini key.
+.streamlit/
