@@ -323,3 +323,36 @@ def test_tax_reaches_the_period_total():
     row["Tax Rate"] = 7.0
     total = R.due_between(pd.DataFrame([row]), "2026-09-20", "2026-09-30")
     assert total == pytest.approx(16.04, abs=0.01)
+
+
+# --------------------------------------------------------------------------
+# Metered bills
+# --------------------------------------------------------------------------
+
+
+def test_a_variable_bill_is_budgeted_at_the_dearest_charge_seen():
+    """A typed figure on a metered bill is a guess; the statement is not."""
+    row = item("Electricity", 40.00, 18, "flintenergies")
+    row["Variable"] = True
+    rec = pd.DataFrame([row])
+    obs = B.observe(rec, pd.DataFrame([
+        charge("2026-07-18", "FlintEnergies PURCHASE 99000", 38.10),
+        charge("2026-08-18", "FlintEnergies PURCHASE 99000", 42.55),
+    ]), today=TODAY)
+    assert B.budgeted_amounts(rec, obs)["Electricity"] == pytest.approx(42.55)
+
+
+def test_a_fixed_bill_is_not_overridden():
+    row = item("Spotify", 12.99, 30, "spotify")
+    rec = pd.DataFrame([row])
+    obs = B.observe(rec, pd.DataFrame([charge("2026-08-30", "Spotify New York", 12.99)]),
+                    today=TODAY)
+    assert "Spotify" not in B.budgeted_amounts(rec, obs)
+
+
+def test_a_variable_bill_with_no_sightings_keeps_its_estimate():
+    """The typed figure is all there is until a charge appears."""
+    row = item("Water", 40.00, 1)
+    row["Variable"] = True
+    rec = pd.DataFrame([row])
+    assert "Water" not in B.budgeted_amounts(rec, B.observe(rec, pd.DataFrame(), today=TODAY))

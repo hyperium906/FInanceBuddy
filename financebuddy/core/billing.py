@@ -306,6 +306,33 @@ def observe(
     return out
 
 
+def budgeted_amounts(
+    recurring: pd.DataFrame,
+    observations: list[Observation],
+    taxed: dict[str, float] | None = None,
+) -> dict[str, float]:
+    """What to reserve for each bill, overriding the sheet where the statement knows better.
+
+    A fixed-price bill is budgeted at its listed amount plus tax. A **variable**
+    one — electricity, water, anything metered — is budgeted at the dearest
+    charge actually seen, because the typed figure on a metered bill is a guess
+    and the point of reserving money is not to come up short in a hot month.
+    With no sightings yet the typed estimate stands; it is all there is.
+    """
+    if recurring is None or recurring.empty:
+        return {}
+    seen = by_name(observations)
+    out: dict[str, float] = {}
+    for _, row in recurring.iterrows():
+        name = str(row.get("Name", "") or "").strip()
+        if not name or not bool(row.get("Variable", False)):
+            continue
+        charges = seen[name].charges if name in seen else []
+        if charges:
+            out[name] = max(amount for _, amount in charges)
+    return out
+
+
 def by_name(observations: list[Observation]) -> dict[str, Observation]:
     """The observations keyed by item name, for joining onto a bill list."""
     return {o.name: o for o in observations}

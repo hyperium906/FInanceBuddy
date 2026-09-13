@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 import pandas as pd
 
 from financebuddy.core import allocations as allocations_mod
+from financebuddy.core import billing as billing_mod
 from financebuddy.core import periods as periods_mod
 from financebuddy.core import recurring as recurring_mod
 
@@ -79,10 +80,15 @@ class Bill:
     due: pd.Timestamp
     category: str = ""
     listed: float = 0.0      # the price before tax, when they differ
+    metered: bool = False    # amount taken from the dearest charge seen
 
     @property
     def taxed(self) -> bool:
-        return bool(self.listed) and abs(self.amount - self.listed) >= 0.01
+        return (
+            not self.metered
+            and bool(self.listed)
+            and abs(self.amount - self.listed) >= 0.01
+        )
 
     def days_away(self, today=None) -> int:
         now = pd.Timestamp(today or pd.Timestamp.today()).normalize()
@@ -90,7 +96,9 @@ class Bill:
 
 
 def bills_in(
-    recurring: pd.DataFrame, period: periods_mod.PayPeriod
+    recurring: pd.DataFrame,
+    period: periods_mod.PayPeriod,
+    budgeted: dict[str, float] | None = None,
 ) -> list[Bill]:
     """Charges due between this payday and the day before the next.
 
@@ -103,10 +111,13 @@ def bills_in(
     table = recurring_mod.upcoming(
         recurring, today=period.start, horizon_days=period.days - 1
     )
+    override = budgeted or {}
     return [
-        Bill(name=str(row["Name"]), amount=float(row["Amount"]),
+        Bill(name=str(row["Name"]),
+             amount=float(override.get(str(row["Name"]), row["Amount"])),
              due=pd.Timestamp(row["Due"]), category=str(row["Category"]),
-             listed=float(row.get("Listed", 0.0) or 0.0))
+             listed=float(row.get("Listed", 0.0) or 0.0),
+             metered=str(row["Name"]) in override)
         for _, row in table.iterrows()
     ]
 
@@ -185,12 +196,17 @@ def for_check(
 ) -> CheckPlan:
     """Assemble everything one paycheck must cover."""
     which, of = ordinal(period, anchor, cadence)
+    budgeted = None
+    if transactions is not None and not transactions.empty:
+        budgeted = billing_mod.budgeted_amounts(
+            recurring, billing_mod.observe(recurring, transactions)
+        )
     return CheckPlan(
         period=period,
         paycheck=float(paycheck),
         which=which,
         of=of,
-        bills=bills_in(recurring, period),
+        bills=bills_in(recurring, period, budgeted),
         allocation=allocations_mod.plan(
             allocations, paycheck, period, transactions, first_check=(which == 1)
         ),

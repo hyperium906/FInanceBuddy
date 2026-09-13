@@ -145,6 +145,12 @@ class RecurringExpense:
         # one. What is budgeted is what leaves the account, so the tax belongs
         # in the figure rather than in a footnote.
         Column("Tax Rate", "tax_rate", PERCENT, ("tax_rate",), optional=True),
+        # A bill whose amount moves with usage rather than being a fixed
+        # price — electricity, water, petrol. The figure in Amount is an
+        # estimate for one of these, and the statement is a better source:
+        # budgeting the dearest recent charge reserves enough for a bad month
+        # instead of coming up short in one.
+        Column("Variable", "variable", BOOL, ("variable",), optional=True),
     )
 
     recurring_id: str
@@ -159,6 +165,7 @@ class RecurringExpense:
     estimated: bool = False
     confirmed_recurring: bool = False
     tax_rate: float = 0.0
+    variable: bool = False
 
 
 @dataclass(frozen=True, slots=True)
