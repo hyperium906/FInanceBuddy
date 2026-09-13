@@ -253,7 +253,9 @@ class WishlistItem:
         Column("Price", "price", MONEY),
         Column("URL", "url", TEXT),
         Column("Category", "category", TEXT),
-        Column("Priority", "priority", INT),
+        # High / Medium / Low, the words the planner tab already uses. An
+        # integer scale would be a second vocabulary for the same idea.
+        Column("Priority", "priority", TEXT),
         Column("Status", "status", TEXT),
         Column("Added On", "added_on", DATE),
         Column("Notes", "notes", TEXT, optional=True),
@@ -268,7 +270,7 @@ class WishlistItem:
     price: float = 0.0
     url: str = ""
     category: str = ""
-    priority: int = 0
+    priority: str = ""
     status: str = "wanted"
     added_on: date | datetime | None = None
     notes: str = ""

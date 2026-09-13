@@ -173,3 +173,48 @@ def test_a_fully_purchased_list_is_empty():
 def test_priority_ordering():
     assert W.priority_rank("High") < W.priority_rank("Medium") < W.priority_rank("Low")
     assert W.priority_rank("") == W.priority_rank("nonsense")
+
+
+# --------------------------------------------------------------------------
+# Two lists read as one
+# --------------------------------------------------------------------------
+
+
+def added(name: str, price: float, url: str = "", category: str = "Shopping") -> dict:
+    """A row as it lands in _Wishlist when added through the app."""
+    return {"Item ID": name[:4], "Name": name, "Price": price, "URL": url,
+            "Category": category, "Priority": "Medium", "Status": "Planned",
+            "Added On": pd.Timestamp("2026-09-12"), "Notes": "",
+            "Target Date": ""}
+
+
+def test_the_two_tabs_read_as_one_list():
+    """Kept apart so the planner's fixed-range totals stay correct."""
+    combined = W.combine(planner(want("Guitar", 450.0)),
+                         pd.DataFrame([added("Monitor", 300.0)]))
+    assert list(combined["Name"]) == ["Guitar", "Monitor"]
+    assert list(combined["Source"]) == ["planner", "added here"]
+
+
+def test_either_side_may_be_empty():
+    only_planner = W.combine(planner(want("Guitar", 450.0)), pd.DataFrame())
+    only_added = W.combine(pd.DataFrame(), pd.DataFrame([added("Monitor", 300.0)]))
+    assert len(only_planner) == 1 and len(only_added) == 1
+    assert W.combine(pd.DataFrame(), pd.DataFrame()).empty
+
+
+def test_a_link_survives_into_the_assessment():
+    combined = W.combine(pd.DataFrame(),
+                         pd.DataFrame([added("Monitor", 300.0, "https://example.com/m")]))
+    assessed = W.assess(combined, ROOM)
+    assert assessed.iloc[0]["URL"] == "https://example.com/m"
+    assert assessed.iloc[0]["Source"] == "added here"
+
+
+def test_added_items_compete_for_the_same_headroom():
+    """A new item is not extra money; it joins the queue like everything else."""
+    combined = W.combine(planner(want("Cheap", 20.0), want("Mid", 239.0)),
+                         pd.DataFrame([added("Monitor", 600.0)]))
+    assessed = W.assess(combined, ROOM)
+    fits = assessed[assessed["Fits"]]
+    assert float(fits["Price"].sum()) <= ROOM.available

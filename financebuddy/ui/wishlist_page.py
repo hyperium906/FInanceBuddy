@@ -16,7 +16,11 @@ from financebuddy.core import commitments as K
 from financebuddy.core import periods as P
 from financebuddy.core import spending as S
 from financebuddy.core import wishlist as W
+from financebuddy.core.categorize import CATEGORIES
 from financebuddy.core.money import format_currency as fc
+from financebuddy.data.products import fetch_product
+from financebuddy.data.sheets import SheetsClient, SheetsError
+from financebuddy.data.models import WishlistItem
 from financebuddy.ui import charts as C
 from financebuddy.ui import shell
 
@@ -34,12 +38,10 @@ def render() -> None:
     st.title("Wishlist")
 
     data = shell.load()
-    planner = data["wishlist_planner"]
-    if planner is None or planner.empty:
-        st.info(
-            "Nothing in the `Wishlist & Purchases` tab yet. This page reads "
-            "that tab directly and never writes to it — add items there."
-        )
+    planner = W.combine(data["wishlist_planner"], data["wishlist"])
+    if planner.empty:
+        st.info("Nothing wanted yet. Add something from a link below.")
+        _add_from_link(data)
         return
 
     room = _headroom(data)
@@ -51,6 +53,8 @@ def render() -> None:
     _what_fits(assessed, room)
     st.divider()
     _everything(assessed)
+    st.divider()
+    _add_from_link(data)
     st.divider()
     _by_category(assessed)
 
@@ -160,16 +164,19 @@ def _everything(assessed: pd.DataFrame) -> None:
         "": assessed["Fits"].map(lambda f: "✅" if f else ""),
         "Item": assessed["Name"],
         "Category": assessed["Category"],
-        "Priority": assessed["Priority"],
-        "Wanted by": assessed["Timeline"].replace("", "—"),
         "Price": assessed["Price"].map(fc),
         "Verdict": [
             f"{C.STATUS_GLYPH[VERDICT_STATUS[v]]} {VERDICT_LABEL[v]}"
             for v in assessed["Verdict"]
         ],
-        "What it takes": assessed["Note"],
+        "Link": assessed["URL"].replace("", None),
     })
-    st.dataframe(shown, hide_index=True, width="stretch")
+    st.dataframe(
+        shown,
+        hide_index=True,
+        width="stretch",
+        column_config={"Link": st.column_config.LinkColumn("Link", display_text="open")},
+    )
 
     missing = assessed[assessed["Misses"]]
     if not missing.empty:
@@ -179,6 +186,91 @@ def _everything(assessed: pd.DataFrame) -> None:
             + ", ".join(f"{r['Name']} (wanted {r['Timeline']})"
                         for _, r in missing.head(4).iterrows())
         )
+
+
+# --------------------------------------------------------------------------
+# Adding something from a link
+# --------------------------------------------------------------------------
+
+
+def _add_from_link(data: dict) -> None:
+    """Paste a product URL; read its name and price; add it to the list.
+
+    Auto-fill failing is ordinary rather than exceptional — large retailers
+    block automated readers as a matter of course — so a failed read leaves
+    the fields empty and says why, instead of refusing to let the item be
+    added by hand.
+    """
+    with st.expander("Add something from a link", expanded=False):
+        url = st.text_input(
+            "Product URL", key="wish_url",
+            placeholder="https://…",
+            help="The page is read for its name and price. Nothing is saved yet.",
+        )
+        if st.button("Read the page", key="wish_fetch", disabled=not url.strip()):
+            with st.spinner("Reading…"):
+                st.session_state["wish_found"] = fetch_product(url)
+
+        found = st.session_state.get("wish_found")
+        if found is not None and found.url.strip() == (url.strip() or found.url):
+            if found.ok:
+                st.success(f"Read from {found.source}.")
+            elif found.has_anything:
+                st.warning(f"Partly read: {found.reason}")
+            else:
+                st.info(
+                    f"{found.reason} Large retailers usually block this — "
+                    "type the name and price in yourself."
+                )
+
+        prefill = st.session_state.get("wish_found")
+        with st.form("wish_add", clear_on_submit=True):
+            left, right = st.columns([3, 2])
+            name = left.text_input(
+                "Name", value=(prefill.name if prefill else ""), key="wish_name")
+            price = right.number_input(
+                "Price", min_value=0.0, step=10.0,
+                value=float(prefill.price) if prefill and prefill.price else 0.0,
+                key="wish_price")
+            category = left.selectbox(
+                "Category", ["Shopping", *[c for c in CATEGORIES if c != "Shopping"]],
+                key="wish_category")
+            priority = right.selectbox("Priority", ["High", "Medium", "Low"],
+                                       index=1, key="wish_priority")
+
+            if not st.form_submit_button("Add to the list", type="primary"):
+                return
+            if not name.strip():
+                st.warning("It needs a name.")
+                return
+            if price <= 0:
+                st.warning("It needs a price above zero.")
+                return
+
+            item = WishlistItem(
+                item_id="", name=name.strip(), price=float(price),
+                url=(url.strip() if url else ""), category=str(category),
+                priority=str(priority), status="Planned",
+                added_on=pd.Timestamp.today().date(),
+            )
+            try:
+                SheetsClient().append_wishlist_item(item)
+            except SheetsError as exc:
+                st.error(str(exc))
+                return
+
+            st.session_state.pop("wish_found", None)
+            shell.clear()
+            st.success(f"Added {item.name} at {fc(item.price)}.")
+            st.rerun()
+
+    st.caption(
+        "Items added here go to the `_Wishlist` tab, not to "
+        "`Wishlist & Purchases`. That tab's totals read a fixed range "
+        "(`SUM(F8:F44)`) which its rows already fill, so anything appended "
+        "beneath them would stop being counted without saying so. Both lists "
+        "are read together above."
+    )
 
 
 def _by_category(assessed: pd.DataFrame) -> None:

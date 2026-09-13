@@ -41,6 +41,52 @@ REACH_PERIODS = 26
 PRIORITY_ORDER = ("high", "medium", "low")
 
 
+#: Column order the assessment works in, whichever tab a row came from.
+PLANNER_COLUMNS = ("Category", "Name", "Priority", "Timeline", "Price",
+                   "Status", "Notes", "URL", "Source")
+
+
+def combine(planner: pd.DataFrame, added: pd.DataFrame) -> pd.DataFrame:
+    """One list out of the hand-kept planner and items added in the app.
+
+    They are kept in separate tabs on purpose. The planner's summary formulas
+    read a fixed range — ``SUM(F8:F44)`` — which its 37 rows already fill, so
+    a row appended beneath them would fall outside every total on that tab and
+    stop being counted without saying so. Writing additions to ``_Wishlist``
+    instead leaves the hand-built tab exactly as it is and keeps its
+    arithmetic honest; the two are read together here, and neither duplicates
+    the other.
+    """
+    frames = []
+    if planner is not None and not planner.empty:
+        rows = planner.copy()
+        rows["URL"] = rows.get("URL", "")
+        rows["Source"] = "planner"
+        frames.append(rows)
+
+    if added is not None and not added.empty:
+        rows = pd.DataFrame({
+            "Category": added.get("Category", ""),
+            "Name": added.get("Name", ""),
+            "Priority": added.get("Priority", ""),
+            "Timeline": added.get("Target Date", pd.Series([""] * len(added))).astype(str),
+            "Price": pd.to_numeric(added.get("Price"), errors="coerce").fillna(0.0),
+            "Status": added.get("Status", "Planned"),
+            "Notes": added.get("Notes", ""),
+            "URL": added.get("URL", ""),
+            "Source": "added here",
+        })
+        frames.append(rows)
+
+    if not frames:
+        return pd.DataFrame(columns=list(PLANNER_COLUMNS))
+    out = pd.concat(frames, ignore_index=True)
+    for column in PLANNER_COLUMNS:
+        if column not in out.columns:
+            out[column] = ""
+    return out[list(PLANNER_COLUMNS)]
+
+
 def quarter_end(timeline: str) -> pd.Timestamp | None:
     """``"Q1 2027"`` -> the last day of that quarter.
 
@@ -192,7 +238,7 @@ def assess(planner: pd.DataFrame, room: Headroom) -> pd.DataFrame:
     """
     columns = ["Name", "Category", "Priority", "Timeline", "Price", "Status",
                "Verdict", "Leaves", "Checks", "Deadline", "Misses", "Note",
-               "Running", "Fits"]
+               "Running", "Fits", "URL", "Source"]
     if planner is None or planner.empty:
         return pd.DataFrame(columns=columns)
 
@@ -220,6 +266,8 @@ def assess(planner: pd.DataFrame, room: Headroom) -> pd.DataFrame:
             "Deadline": verdict.deadline,
             "Misses": verdict.misses_deadline,
             "Note": verdict.note,
+            "URL": str(item.get("URL", "") or ""),
+            "Source": str(item.get("Source", "") or "planner"),
             "_rank": (order[verdict.status], priority_rank(item.get("Priority")),
                       verdict.price),
         })
