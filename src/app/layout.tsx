@@ -8,17 +8,8 @@ export const metadata: Metadata = {
   description: "What to do with the check that just landed.",
 };
 
-const PAGES = [
-  ["/payday", "Payday"],
-  ["/log", "Log"],
-  ["/bills", "Bills"],
-  ["/transactions", "Transactions"],
-  ["/budgets", "Budgets"],
-  ["/accounts", "Accounts"],
-  ["/savings", "Savings"],
-  ["/wishlist", "Wishlist"],
-  ["/import", "Import"],
-] as const;
+/** Pages are added here one at a time as they are built. */
+const PAGES = [["/", "Dashboard"]] as const;
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
@@ -38,7 +29,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
             <p className="mt-1 text-xs text-[var(--muted)]">Cached for five minutes. Refresh after editing the sheet by hand.</p>
           </form>
         </nav>
-        <main className="mx-auto w-full max-w-5xl px-4 py-6 md:px-8">{children}</main>
+        <main className="mx-auto w-full max-w-6xl px-4 py-6 md:px-8">{children}</main>
       </body>
     </html>
   );
